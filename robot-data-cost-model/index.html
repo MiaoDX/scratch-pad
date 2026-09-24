@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>机器人数据管线成本模型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF1F3; --panel:#FFFFFF; --panel2:#F6F8F9; --ink:#16232F; --muted:#5B6B78; --line:#D4DCE1;
+  --accent:#0E6A86; --accent-soft:#DCEEF3; --warn:#9A6414; --warn-bg:#FBEFD9; --ok:#2F7D4F; --ok-bg:#DFF1E6;
+  --est:#4B5E6E; --est-bg:#E6ECF0; --dec:#8A3B5C; --dec-bg:#F6E3EB;
+  --c1:#2F6FB0; --c2:#6B7C8C; --c3:#7B5BB6; --c4:#2A9D8F; --c5:#A0673A; --c6:#D19A2A; --c7:#C4506A;
+  --num:"Barlow Semi Condensed","Noto Sans SC",system-ui,sans-serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1820; --panel:#16222C; --panel2:#1B2935; --ink:#E4ECF1; --muted:#93A4B1; --line:#2A3945;
+    --accent:#4FB3D1; --accent-soft:#173746; --warn:#E0A84A; --warn-bg:#3A2C14; --ok:#5DBB86; --ok-bg:#16301F;
+    --est:#A9B8C4; --est-bg:#223240; --dec:#E08AAE; --dec-bg:#3A1D2A;
+    --c1:#5B9BE0; --c2:#90A1B0; --c3:#A58BE0; --c4:#4CC2B3; --c5:#CF8D58; --c6:#E6B54A; --c7:#E3708A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1820; --panel:#16222C; --panel2:#1B2935; --ink:#E4ECF1; --muted:#93A4B1; --line:#2A3945;
+  --accent:#4FB3D1; --accent-soft:#173746; --warn:#E0A84A; --warn-bg:#3A2C14; --ok:#5DBB86; --ok-bg:#16301F;
+  --est:#A9B8C4; --est-bg:#223240; --dec:#E08AAE; --dec-bg:#3A1D2A;
+  --c1:#5B9BE0; --c2:#90A1B0; --c3:#A58BE0; --c4:#4CC2B3; --c5:#CF8D58; --c6:#E6B54A; --c7:#E3708A;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{padding:20px 24px 8px;max-width:1500px;margin:0 auto}
+.top h1{font-size:24px;margin:0 0 4px;font-weight:700;letter-spacing:.01em}
+.top p{margin:0;color:var(--muted);font-size:13.5px;max-width:78ch}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}
+.toolbar .grp{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+.btn{border:0;background:transparent;padding:6px 11px;border-radius:6px;cursor:pointer;font-size:13.5px;color:var(--ink)}
+.btn:hover{background:var(--panel2)}
+.btn.on{background:var(--accent);color:#fff}
+.btn.solid{border:1px solid var(--line);background:var(--panel)}
+.toast{font-size:13px;color:var(--ok);min-height:1em}
+
+.app{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;max-width:1500px;margin:0 auto;padding:12px 24px 40px}
+.main{min-width:0;display:flex;flex-direction:column;gap:18px}
+.side{min-width:0}
+@media (min-width:1000px){.side{position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto;padding-right:4px}}
+@media (max-width:999px){.app{grid-template-columns:1fr;padding:12px 14px 40px}.top{padding:16px 14px 4px}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.card h2{font-size:16px;margin:0 0 2px;font-weight:700}
+.card .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+
+/* pipeline hero */
+.flow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;position:relative}
+.stage{padding:10px 12px 12px;position:relative;border-left:1px solid var(--line)}
+.stage:first-child{border-left:0}
+.stage .nm{font-size:12.5px;color:var(--muted)}
+.stage .v{font-family:var(--num);font-size:30px;font-weight:600;line-height:1.1;margin-top:2px;font-variant-numeric:tabular-nums}
+.stage .v small{display:block;font-family:var(--sans);font-size:12.5px;font-weight:500;color:var(--muted);margin-top:1px}
+.stage .d{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.45}
+.stage::after{content:"";position:absolute;right:-6px;top:22px;width:10px;height:10px;border-top:2px solid var(--accent);border-right:2px solid var(--accent);transform:rotate(45deg);background:var(--panel);z-index:1}
+.stage:last-child::after{display:none}
+.flowbar{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--c1),var(--c3),var(--c7));margin:2px 0 12px;opacity:.85}
+@media (max-width:760px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}.stage{border-left:0;border-top:1px solid var(--line)}.stage::after{display:none}.stage .v{font-size:26px}}
+
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:1px solid var(--line);margin-top:6px}
+.kpi{padding:12px 12px 4px}
+.kpi .nm{font-size:12.5px;color:var(--muted)}
+.kpi .v{font-family:var(--num);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi .delta{font-size:12.5px;min-height:1.2em}
+.up{color:#C0392B}.down{color:var(--ok)}
+@media (max-width:760px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.monthrow{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:13.5px;color:var(--muted)}
+.monthrow input{flex:1}
+
+.chartbox{position:relative;height:320px}
+.chartbox.short{height:300px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:1200px){.two{grid-template-columns:1fr}}
+
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:12.5px}
+td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums;font-size:15px}
+.scroll{overflow-x:auto}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}
+
+/* side panel */
+.sec{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+.sec>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:700;font-size:14.5px;display:flex;justify-content:space-between;align-items:center}
+.sec>summary::-webkit-details-marker{display:none}
+.sec>summary::after{content:"+";color:var(--muted);font-weight:400;font-size:18px}
+.sec[open]>summary::after{content:"−"}
+.sec .body{padding:0 14px 12px}
+.note{font-size:12.5px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.field{padding:8px 0;border-top:1px solid var(--line)}
+.field:first-child{border-top:0}
+.fl{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px}
+.fi{display:flex;align-items:center;gap:8px;margin-top:4px}
+.fi input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+.fi input[type=number],.mini{width:84px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);font-family:var(--num);font-size:15px;text-align:right}
+.fi .u{font-size:12px;color:var(--muted);min-width:52px}
+.fi select,.sel{padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);font-size:13.5px}
+.tip{font-size:12px;color:var(--muted);margin-top:2px}
+.tag{font-size:11.5px;padding:1px 7px;border-radius:10px;white-space:nowrap}
+.t-ok{background:var(--ok-bg);color:var(--ok)}
+.t-est{background:var(--est-bg);color:var(--est)}
+.t-ph{background:var(--warn-bg);color:var(--warn)}
+.t-dec{background:var(--dec-bg);color:var(--dec)}
+.tbl input{width:100%;min-width:52px;padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);font-family:var(--num);font-size:14.5px;text-align:right}
+.tbl td{padding:5px 3px;border-bottom:0}
+.tbl th{padding:4px 3px;font-size:11.5px}
+.tbl td:first-child{font-size:12.5px;padding-right:6px}
+.legend-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+
+.info h3{font-size:14.5px;margin:18px 0 6px}
+.info h3:first-of-type{margin-top:4px}
+.info ul{margin:0;padding-left:1.2em;font-size:13.5px}
+.info li{margin:3px 0}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>机器人数据管线成本模型</h1>
+  <p>从采集小时数出发，推算存储、算力、传输与交付的月度成本，以及每交付一小时数据的成本。右侧参数全部可调。默认值均为示例估计，不代表任何公司的真实数据；云厂商价格为 2026 年 9 月查询的公开牌价，未含企业折扣。</p>
+  <div class="toolbar">
+    <div class="grp" id="presets" role="group" aria-label="预设情景"></div>
+    <div class="grp" role="group" aria-label="成本口径">
+      <button class="btn" data-view="amort">摊销口径</button>
+      <button class="btn" data-view="cash">现金流口径</button>
+    </div>
+    <button class="btn solid" id="setBase">设为对比基线</button>
+    <button class="btn solid" id="clearBase">清除基线</button>
+    <button class="btn solid" id="share">复制当前情景链接</button>
+    <span class="toast" id="toast" aria-live="polite"></span>
+  </div>
+</header>
+
+<div class="app">
+  <main class="main">
+    <section class="card" aria-label="数据流与核心指标">
+      <div class="flow" id="flow"></div>
+      <div class="flowbar" aria-hidden="true"></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="monthrow"><label for="monthSel">查看第 <b id="monthLbl">12</b> 个月</label><input type="range" id="monthSel" min="1" max="36" value="12"></div>
+    </section>
+
+    <section class="card">
+      <h2>月度成本构成</h2>
+      <p class="sub" id="costSub">单位：万元/月</p>
+      <div class="chartbox"><canvas id="cCost"></canvas></div>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <h2>存储存量</h2>
+        <p class="sub">单位：PB。成品库指交付格式的数据，按全部保留计算。</p>
+        <div class="chartbox short"><canvas id="cStock"></canvas></div>
+      </section>
+      <section class="card">
+        <h2>哪些参数最影响总成本</h2>
+        <p class="sub" id="tornadoSub">每个参数单独 ±30%，36 个月总成本的变化（万元）</p>
+        <div class="chartbox short"><canvas id="cTornado"></canvas></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2 id="compTitle">第 12 个月成本明细</h2>
+      <div class="scroll"><table id="compTbl"></table></div>
+    </section>
+
+    <section class="card info">
+      <h2>已查实的背景信息</h2>
+      <h3>对象存储牌价（元/GB/月，按量）</h3>
+      <div class="scroll"><table>
+        <thead><tr><th>厂商</th><th class="n">标准</th><th class="n">低频</th><th class="n">归档</th><th class="n">最冷档</th><th>来源</th></tr></thead>
+        <tbody>
+          <tr><td>阿里云 OSS</td><td class="n">0.12</td><td class="n">~0.08</td><td class="n">~0.033</td><td class="n">0.0075</td><td><a href="https://help.aliyun.com/zh/oss/storage-fees" target="_blank" rel="noopener">官方计费</a>、<a href="https://www.cnblogs.com/yunqishequ/p/16870272.html" target="_blank" rel="noopener">深度冷归档发布</a></td></tr>
+          <tr><td>华为云 OBS</td><td class="n">0.099</td><td class="n">0.08</td><td class="n">0.033</td><td class="n">0.014</td><td><a href="https://www.huaweicloud.com/product/obs.html" target="_blank" rel="noopener">产品页</a></td></tr>
+          <tr><td>腾讯云 COS</td><td class="n">~0.118</td><td class="n">0.08</td><td class="n">~0.03</td><td class="n">0.01</td><td><a href="https://zhuanlan.zhihu.com/p/12008527553" target="_blank" rel="noopener">价格整理（北京）</a>，归档为第三方数据</td></tr>
+          <tr><td>天翼云</td><td class="n">0.10</td><td class="n">0.08</td><td class="n">—</td><td class="n">—</td><td><a href="https://ctyun.cn/document/10026693/10026739" target="_blank" rel="noopener">官方计费</a></td></tr>
+          <tr><td>火山引擎 TOS</td><td class="n" colspan="4" style="text-align:center">未查到公开牌价，需询价</td><td><a href="https://www.volcengine.com/product/las" target="_blank" rel="noopener">LAS 数据湖</a>支持 MCAP、LeRobot、Lance</td></tr>
+        </tbody>
+      </table></div>
+      <h3>算力参考</h3>
+      <ul>
+        <li>大厂云 H100 级折合约 25–40 元/卡·时；专业 GPU 平台 A100 约 7–14 元/卡·时；消费级 4090 低至约 1.3 元/卡·时（<a href="https://xtechtools.com/learn/gpu-rental-2026/" target="_blank" rel="noopener">来源</a>）。</li>
+        <li>大厂预留实例约 6 折；阿里云抢占式实例最高比按量省 90%，有被回收风险，适合可重跑的批处理（<a href="https://help.aliyun.com/document_detail/52088.html" target="_blank" rel="noopener">来源</a>）。</li>
+        <li>阿里云 c9i.large（2 vCPU）按量约 0.387 元/小时，折合约 0.19 元/vCPU·时（武汉地域）。</li>
+      </ul>
+      <h3>容易漏算的成本</h3>
+      <ul>
+        <li>公网出流量约 0.25–0.50 元/GB（闲时/忙时），交付 1 PB 约 25–50 万元。交付尽量走客户同云同地域 bucket 或寄盘。</li>
+        <li>低频、归档类按 64 KB 最小计量：散帧、散 IMU 文件的计费容量会远大于实际，入库前打包为 MCAP / Lance / WebDataset。</li>
+        <li>最低存储时长：阿里云低频 30 天、归档 60 天、冷归档与深度冷归档 180 天，提前删除或转层按满期计费。</li>
+        <li>冷数据取回费和解冻时间：需要整批重处理的数据不宜过早降冷。本模型未计取回费。</li>
+      </ul>
+      <h3>模型怎么算</h3>
+      <ul>
+        <li>码率换算：GB/小时 ≈ 码率（Mbps）× 0.45。例如 1080p30 约 15 Mbps ≈ 6.75 GB/小时。</li>
+        <li>每月按 30 天；1 PB = 10⁶ GB。未留存的原始数据只在热缓冲期内占用标准层；留存部分按数据年龄依次停留在标准层、归档、深度归档。</li>
+        <li>自建 IDC：按所需容量（加冗余余量）分批采购，只增不减。摊销口径把采购额按折旧年限平摊；现金流口径在采购当月一次计入。</li>
+        <li>跨地点传输：处理地点与热数据地点不一致的部分、留存数据从热层迁往冷层地点不一致的部分，按跨地点单价计费。</li>
+        <li>未计入：数据取回费、请求费、跨地域容灾复制、人员成本（IDC 运维人力可并入"运营成本"参数）。</li>
+      </ul>
+    </section>
+  </main>
+
+  <aside class="side" id="side" aria-label="参数"></aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ---------- defaults ---------- */
+const VENDORS = {
+  aliyun:{name:"阿里云 OSS", std:0.12, ia:0.08, arc:0.033, deep:0.0075},
+  huawei:{name:"华为云 OBS", std:0.099, ia:0.08, arc:0.033, deep:0.014},
+  tencent:{name:"腾讯云 COS", std:0.118, ia:0.08, arc:0.03, deep:0.01},
+  volc:{name:"火山引擎 TOS（待询价，暂用中位值）", std:0.10, ia:0.08, arc:0.033, deep:0.01},
+  custom:{name:"自定义 / 正式报价"}
+};
+const DEF = {
+  mod:[
+    {name:"Ego 头戴", h:21000, raw:13.5, del:4.5},
+    {name:"UMI 手持", h:12500, raw:27, del:6.8},
+    {name:"真机遥操", h:8400, raw:45, del:11}
+  ],
+  growth:0,
+  hotDays:30, retain:30, stdDays:90, arcDays:365, productTier:"ia",
+  vendor:"aliyun", price:{std:0.12, ia:0.08, arc:0.033, deep:0.0075}, discount:100,
+  wl:[
+    {name:"数据解析与时间同步", gpu:0, cpu:2, cov:100},
+    {name:"视频转码压缩", gpu:0, cpu:3, cov:100},
+    {name:"手部姿态与重建", gpu:0.5, cpu:0.5, cov:80},
+    {name:"分割", gpu:0.3, cpu:0.2, cov:50},
+    {name:"VLM 自动标注", gpu:0.2, cpu:0.2, cov:100}
+  ],
+  gpuScale:1, gpuPrice:8, spotShare:50, spotDisc:60, cpuPrice:0.19,
+  hotIDC:0, coldIDC:0, productIDC:0, computeIDC:0,
+  idcStorCapex:55, idcStorOpex:1.5, idcStorYears:5, idcHeadroom:20,
+  idcGpuCapex:6, idcGpuOpex:600, idcGpuYears:4, idcUtil:70, idcCpuCost:0.06,
+  uplinkPrice:3000, xferPrice:0.1,
+  deliverRatio:50, dlvInternal:50, dlvPublic:40, dlvDisk:10, egressPrice:0.3, diskPrice:300,
+  salePrice:0,
+  view:"amort", month:12
+};
+const PRESETS = [
+  {id:"base", name:"基准", apply:p=>p},
+  {id:"lean", name:"精简留存", apply:p=>{p.retain=10;p.hotDays=14;p.stdDays=60;return p;}},
+  {id:"all", name:"全量留存", apply:p=>{p.retain=100;return p;}},
+  {id:"hybrid", name:"混合自建", apply:p=>{p.coldIDC=80;p.productIDC=50;p.computeIDC=50;return p;}}
+];
+const clone = o=>JSON.parse(JSON.stringify(o));
+const MONTHS = 36, DAYS = 30;
+
+/* ---------- state ---------- */
+let P = clone(DEF);
+let base = null;
+try{
+  const m = location.hash.match(/s=([^&]+)/);
+  if(m){ const s = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1]))))); P = Object.assign(clone(DEF), s); }
+}catch(e){ P = clone(DEF); }
+try{ const b = localStorage.getItem("rdcm-base"); if(b) base = JSON.parse(b); }catch(e){}
+
+/* ---------- model ---------- */
+const CATS = [
+  {k:"cloudStor", n:"云存储", c:"--c1"},
+  {k:"idcStor", n:"自建存储", c:"--c2"},
+  {k:"cloudGPU", n:"云 GPU", c:"--c3"},
+  {k:"cloudCPU", n:"云 CPU", c:"--c4"},
+  {k:"idcComp", n:"自建算力", c:"--c5"},
+  {k:"xfer", n:"上行专线与跨地点传输", c:"--c6"},
+  {k:"dlv", n:"交付流量", c:"--c7"}
+];
+
+function run(p){
+  const pct = v=>Math.max(0, Math.min(1, v/100));
+  const pr = k=>(p.price[k]||0)*p.discount/100;
+  const retain=pct(p.retain), hI=pct(p.hotIDC), cI=pct(p.coldIDC), pI=pct(p.productIDC), gI=pct(p.computeIDC);
+  const dSum = (p.dlvInternal+p.dlvPublic+p.dlvDisk)||1;
+  const dPub = p.dlvPublic/dSum, dDisk = p.dlvDisk/dSum;
+  const storAm = p.idcStorCapex*1e4/(Math.max(1,p.idcStorYears)*12);
+  const gpuAm = p.idcGpuCapex*1e4/(Math.max(1,p.idcGpuYears)*12);
+  const util = Math.max(0.05, pct(p.idcUtil));
+  const rawCoh=[], prodCoh=[];
+  let cap=0, cards=0;
+  const out=[];
+  for(let t=0;t<MONTHS;t++){
+    const g = Math.pow(1+p.growth/100, t);
+    let hDay=0, rawDay=0, prodDay=0;
+    p.mod.forEach(m=>{ const h=m.h*g; hDay+=h; rawDay+=h*m.raw; prodDay+=h*m.del; });
+    const hMon=hDay*DAYS, rawMon=rawDay*DAYS, prodMon=prodDay*DAYS;
+    const buf = rawDay*(1-retain)*Math.min(p.hotDays, (t+1)*DAYS);
+    rawCoh.push(rawMon*retain); prodCoh.push(prodMon);
+    let std=0, arc=0, deep=0, prod=0;
+    for(let s=0;s<=t;s++){
+      const age=(t-s)*DAYS+DAYS/2, v=rawCoh[s];
+      if(age<p.stdDays) std+=v; else if(age<p.arcDays) arc+=v; else deep+=v;
+      prod+=prodCoh[s];
+    }
+    const hot = buf+std;
+    const cloudStor = hot*(1-hI)*pr("std") + arc*(1-cI)*pr("arc") + deep*(1-cI)*pr("deep") + prod*(1-pI)*pr(p.productTier);
+    const idcNeed = (hot*hI + (arc+deep)*cI + prod*pI)/1e6*(1+p.idcHeadroom/100);
+    const newCap = Math.max(0, idcNeed-cap); cap+=newCap;
+    const idcStorAm = cap*storAm + cap*p.idcStorOpex*1e4;
+    const idcStorCash = newCap*p.idcStorCapex*1e4 + cap*p.idcStorOpex*1e4;
+
+    let gpuH=0, cpuH=0;
+    p.wl.forEach(w=>{ const cov=pct(w.cov); gpuH+=hMon*cov*w.gpu*p.gpuScale; cpuH+=hMon*cov*w.cpu; });
+    const cloudGPU = gpuH*(1-gI)*p.gpuPrice*(1 - pct(p.spotShare)*pct(p.spotDisc));
+    const cloudCPU = cpuH*(1-gI)*p.cpuPrice;
+    const need = Math.ceil(gpuH*gI/(720*util));
+    const newCards = Math.max(0, need-cards); cards+=newCards;
+    const idcCPU = cpuH*gI*p.idcCpuCost;
+    const idcCompAm = cards*gpuAm + cards*p.idcGpuOpex + idcCPU;
+    const idcCompCash = newCards*p.idcGpuCapex*1e4 + cards*p.idcGpuOpex + idcCPU;
+
+    const gbps = rawDay*8/86400;
+    const xferGB = rawMon*Math.abs(gI-hI) + rawMon*retain*Math.abs(cI-hI);
+    const xfer = xferGB*p.xferPrice + gbps*p.uplinkPrice;
+
+    const dlvH = hMon*p.deliverRatio/100;
+    const dlvGB = hDay>0 ? dlvH*(prodDay/hDay) : 0;
+    const dlv = dlvGB*dPub*p.egressPrice + dlvGB/1000*dDisk*p.diskPrice;
+
+    const am = {cloudStor, idcStor:idcStorAm, cloudGPU, cloudCPU, idcComp:idcCompAm, xfer, dlv};
+    const cash = {cloudStor, idcStor:idcStorCash, cloudGPU, cloudCPU, idcComp:idcCompCash, xfer, dlv};
+    const sum = o=>Object.values(o).reduce((a,b)=>a+b,0);
+    out.push({t, hDay, rawDay, prodDay, hMon, gbps, buf, std, arc, deep, prod, gpuH, cpuH, cards, cap, dlvH, dlvGB,
+      am, cash, totAm:sum(am), totCash:sum(cash)});
+  }
+  return out;
+}
+const tot = (r,view)=>view==="cash"?r.totCash:r.totAm;
+const sum36 = (res,view)=>res.reduce((a,r)=>a+tot(r,view),0);
+
+/* ---------- formatting ---------- */
+const wan = v=>v/1e4;
+function money(v){ const a=Math.abs(v); if(a>=1e8) return (v/1e8).toFixed(2)+"<small>亿</small>"; if(a>=1e4) return Math.round(v/1e4).toLocaleString()+"<small>万</small>"; return Math.round(v).toLocaleString()+"<small>元</small>"; }
+function moneyTxt(v){ return money(v).replace(/<\/?small>/g,""); }
+const n0 = v=>Math.round(v).toLocaleString();
+const n1 = v=>(Math.round(v*10)/10).toLocaleString();
+const cssv = k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+/* ---------- side panel ---------- */
+const TAGS = {ok:["t-ok","已查实"], est:["t-est","估计"], ph:["t-ph","占位"], dec:["t-dec","待决策"]};
+const tag = t=>`<span class="tag ${TAGS[t][0]}">${TAGS[t][1]}</span>`;
+const SECTIONS = [
+  {title:"数据采集", open:true, note:"每种模态的每日采集小时数、原始码率和交付格式码率。码率换算：GB/小时 ≈ Mbps × 0.45。默认值合计约 1 PB/天。", items:[
+    {type:"mod"},
+    {k:"growth", l:"采集量月增长", u:"%/月", min:0, max:20, step:0.5, tag:"est"}
+  ]},
+  {title:"存储生命周期", open:true, items:[
+    {k:"hotDays", l:"原始数据热缓冲期", u:"天", min:3, max:90, step:1, tag:"est", tip:"全部原始数据在标准层等待处理的时长"},
+    {k:"retain", l:"原始数据长期留存比例", u:"%", min:0, max:100, step:5, tag:"dec", tip:"缓冲期结束后仍保留的原始数据比例"},
+    {k:"stdDays", l:"留存数据在标准层停留", u:"天", min:0, max:365, step:15, tag:"est", tip:"之后转入归档"},
+    {k:"arcDays", l:"满多少天转深度归档", u:"天", min:90, max:1095, step:15, tag:"est"},
+    {k:"productTier", l:"成品库存储层", type:"select", opts:[["std","标准"],["ia","低频"],["arc","归档"]], tag:"est", tip:"交付格式数据会被反复出售，默认放低频"}
+  ]},
+  {title:"云存储价格", items:[
+    {type:"vendor"},
+    {k:"discount", l:"实付占牌价比例", u:"%", min:20, max:100, step:5, tag:"est", tip:"拿到正式报价后调整"}
+  ]},
+  {title:"计算任务", note:"系数按每处理 1 小时采集数据计。默认值均为估计，建议用小样本实测后替换。", items:[
+    {type:"wl"},
+    {k:"gpuScale", l:"GPU 系数整体倍率", u:"×", min:0.2, max:5, step:0.1, tag:"est"},
+    {k:"gpuPrice", l:"云 GPU 单价（推理卡，按量）", u:"元/卡时", min:1, max:40, step:0.5, tag:"est"},
+    {k:"spotShare", l:"用抢占式实例的比例", u:"%", min:0, max:100, step:5, tag:"est"},
+    {k:"spotDisc", l:"抢占式折扣幅度", u:"%", min:0, max:90, step:5, tag:"est", tip:"阿里云抢占式最高省 90%"},
+    {k:"cpuPrice", l:"云 CPU 单价", u:"元/核时", min:0.02, max:0.5, step:0.01, tag:"ok", tip:"阿里云 c9i 按量，武汉地域"}
+  ]},
+  {title:"部署位置", note:"放在自建 IDC 的比例，其余在云上。处理地点与数据地点不一致时会产生传输费用。", items:[
+    {k:"hotIDC", l:"热数据放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"coldIDC", l:"冷数据（归档/深度）放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"productIDC", l:"成品库放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"computeIDC", l:"计算任务放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"}
+  ]},
+  {title:"自建 IDC 成本", note:"以下均为占位值，需要硬件与机房报价替换。", items:[
+    {k:"idcStorCapex", l:"存储造价（含冗余）", u:"万元/PB", min:10, max:200, step:5, tag:"ph"},
+    {k:"idcStorOpex", l:"存储运营（电力/机柜/运维）", u:"万元/PB·月", min:0, max:10, step:0.1, tag:"ph"},
+    {k:"idcStorYears", l:"存储折旧年限", u:"年", min:2, max:8, step:1, tag:"est"},
+    {k:"idcHeadroom", l:"容量余量", u:"%", min:0, max:100, step:5, tag:"est"},
+    {k:"idcGpuCapex", l:"GPU 造价（含服务器分摊）", u:"万元/卡", min:1, max:30, step:0.5, tag:"ph"},
+    {k:"idcGpuOpex", l:"GPU 运营", u:"元/卡·月", min:0, max:5000, step:50, tag:"ph"},
+    {k:"idcGpuYears", l:"GPU 折旧年限", u:"年", min:2, max:6, step:1, tag:"est"},
+    {k:"idcUtil", l:"IDC GPU 平均利用率", u:"%", min:20, max:100, step:5, tag:"est"},
+    {k:"idcCpuCost", l:"IDC CPU 折合成本", u:"元/核时", min:0.01, max:0.3, step:0.01, tag:"ph"}
+  ]},
+  {title:"传输与交付", items:[
+    {k:"uplinkPrice", l:"上行专线", u:"元/Gbps·月", min:0, max:20000, step:500, tag:"ph"},
+    {k:"xferPrice", l:"跨地点传输", u:"元/GB", min:0, max:0.8, step:0.01, tag:"ph"},
+    {k:"deliverRatio", l:"每月交付量占当月产出", u:"%", min:0, max:300, step:10, tag:"dec", tip:"可大于 100%：同一批数据卖给多个客户"},
+    {k:"dlvInternal", l:"交付方式：客户同云内网", u:"份", min:0, max:100, step:5, tag:"est"},
+    {k:"dlvPublic", l:"交付方式：公网下载", u:"份", min:0, max:100, step:5, tag:"est"},
+    {k:"dlvDisk", l:"交付方式：寄盘", u:"份", min:0, max:100, step:5, tag:"est", tip:"三种方式按份数折算比例"},
+    {k:"egressPrice", l:"公网出流量单价", u:"元/GB", min:0, max:1, step:0.05, tag:"ok", tip:"阿里云闲时 0.25，忙时 0.50"},
+    {k:"diskPrice", l:"寄盘成本", u:"元/TB", min:0, max:2000, step:50, tag:"ph"},
+    {k:"salePrice", l:"对外售价", u:"元/小时", min:0, max:2000, step:10, tag:"dec", tip:"填入后显示毛利率"}
+  ]}
+];
+
+function fieldHTML(f){
+  if(f.type==="select"){
+    return `<div class="field"><div class="fl"><label for="f-${f.k}">${f.l}</label>${tag(f.tag)}</div>
+      <div class="fi"><select id="f-${f.k}" data-k="${f.k}">${f.opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select></div>
+      ${f.tip?`<div class="tip">${f.tip}</div>`:""}</div>`;
+  }
+  if(f.type==="mod"){
+    return `<div class="field"><div class="fl"><span>按模态</span>${tag("est")}</div>
+      <table class="tbl"><thead><tr><th></th><th>小时/天</th><th>原始 GB/h</th><th>交付 GB/h</th></tr></thead><tbody>
+      ${P.mod.map((m,i)=>`<tr><td>${m.name}</td>
+        <td><input type="number" aria-label="${m.name} 小时/天" data-mod="${i}" data-f="h" step="100" min="0"></td>
+        <td><input type="number" aria-label="${m.name} 原始码率" data-mod="${i}" data-f="raw" step="0.5" min="0"></td>
+        <td><input type="number" aria-label="${m.name} 交付码率" data-mod="${i}" data-f="del" step="0.5" min="0"></td></tr>`).join("")}
+      </tbody></table><div class="tip" id="modSum"></div></div>`;
+  }
+  if(f.type==="wl"){
+    return `<div class="field"><div class="fl"><span>按任务</span>${tag("est")}</div>
+      <table class="tbl"><thead><tr><th></th><th>GPU 卡时</th><th>CPU 核时</th><th>覆盖 %</th></tr></thead><tbody>
+      ${P.wl.map((w,i)=>`<tr><td>${w.name}</td>
+        <td><input type="number" aria-label="${w.name} GPU 卡时" data-wl="${i}" data-f="gpu" step="0.05" min="0"></td>
+        <td><input type="number" aria-label="${w.name} CPU 核时" data-wl="${i}" data-f="cpu" step="0.1" min="0"></td>
+        <td><input type="number" aria-label="${w.name} 覆盖比例" data-wl="${i}" data-f="cov" step="5" min="0" max="100"></td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+  if(f.type==="vendor"){
+    return `<div class="field"><div class="fl"><label for="f-vendor">厂商牌价</label>${tag("ok")}</div>
+      <div class="fi"><select id="f-vendor" class="sel" style="flex:1">${Object.entries(VENDORS).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join("")}</select></div>
+      <table class="tbl" style="margin-top:6px"><thead><tr><th>标准</th><th>低频</th><th>归档</th><th>深度归档</th></tr></thead><tbody><tr>
+      ${["std","ia","arc","deep"].map(k=>`<td><input type="number" aria-label="${k} 单价" data-price="${k}" step="0.001" min="0"></td>`).join("")}
+      </tr></tbody></table><div class="tip">单位 元/GB/月。手动修改后自动切换为"自定义"。</div></div>`;
+  }
+  return `<div class="field"><div class="fl"><label for="f-${f.k}">${f.l}</label>${tag(f.tag)}</div>
+    <div class="fi"><input type="range" aria-label="${f.l}" data-k="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}">
+    <input type="number" id="f-${f.k}" data-k="${f.k}" step="${f.step}" min="${f.min}"><span class="u">${f.u}</span></div>
+    ${f.tip?`<div class="tip">${f.tip}</div>`:""}</div>`;
+}
+function buildSide(){
+  const side = document.getElementById("side");
+  side.innerHTML = `<div class="legend-tags">${tag("ok")}${tag("est")}${tag("ph")}${tag("dec")}</div>` +
+    SECTIONS.map(s=>`<details class="sec" ${s.open?"open":""}><summary>${s.title}</summary><div class="body">
+      ${s.note?`<p class="note">${s.note}</p>`:""}${s.items.map(fieldHTML).join("")}</div></details>`).join("");
+  side.addEventListener("input", onInput);
+  side.addEventListener("change", onInput);
+}
+function syncSide(){
+  document.querySelectorAll("#side [data-k]").forEach(el=>{ if(document.activeElement!==el) el.value = P[el.dataset.k]; });
+  document.querySelectorAll("#side [data-mod]").forEach(el=>{ if(document.activeElement!==el) el.value = P.mod[+el.dataset.mod][el.dataset.f]; });
+  document.querySelectorAll("#side [data-wl]").forEach(el=>{ if(document.activeElement!==el) el.value = P.wl[+el.dataset.wl][el.dataset.f]; });
+  document.querySelectorAll("#side [data-price]").forEach(el=>{ if(document.activeElement!==el) el.value = P.price[el.dataset.price]; });
+  const v = document.getElementById("f-vendor"); if(v) v.value = P.vendor;
+}
+function onInput(e){
+  const el = e.target;
+  if(el.id==="f-vendor"){ P.vendor=el.value; if(el.value!=="custom"){ const V=VENDORS[el.value]; P.price={std:V.std,ia:V.ia,arc:V.arc,deep:V.deep}; } }
+  else if(el.dataset.k){ P[el.dataset.k] = el.tagName==="SELECT" ? el.value : (parseFloat(el.value)||0); }
+  else if(el.dataset.mod){ P.mod[+el.dataset.mod][el.dataset.f] = parseFloat(el.value)||0; }
+  else if(el.dataset.wl){ P.wl[+el.dataset.wl][el.dataset.f] = parseFloat(el.value)||0; }
+  else if(el.dataset.price){ P.price[el.dataset.price] = parseFloat(el.value)||0; P.vendor="custom"; }
+  else return;
+  markPreset(null);
+  schedule();
+}
+
+/* ---------- charts ---------- */
+let cCost, cStock, cTornado;
+function baseOpts(){
+  const ink=cssv("--muted"), line=cssv("--line");
+  return {responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{legend:{position:"bottom", labels:{color:ink, boxWidth:10, boxHeight:10, font:{size:12}}},
+      tooltip:{mode:"index", intersect:false}},
+    scales:{x:{stacked:true, ticks:{color:ink, font:{size:11}}, grid:{display:false}},
+      y:{stacked:true, ticks:{color:ink, font:{size:11}}, grid:{color:line}}}};
+}
+function initCharts(){
+  Chart.defaults.font.family = cssv("--sans") || "sans-serif";
+  const labels = Array.from({length:MONTHS},(_,i)=>`${i+1}`);
+  const o1 = baseOpts();
+  o1.plugins.tooltip.callbacks = {label:c=>`${c.dataset.label}：${n0(c.raw)} 万`, title:c=>`第 ${c[0].label} 个月`};
+  cCost = new Chart(document.getElementById("cCost"), {type:"bar", data:{labels, datasets:CATS.map(c=>({label:c.n, data:[], backgroundColor:cssv(c.c), borderWidth:0}))}, options:o1});
+  const o2 = baseOpts();
+  o2.plugins.tooltip.callbacks = {label:c=>`${c.dataset.label}：${n1(c.raw)} PB`, title:c=>`第 ${c[0].label} 个月`};
+  o2.elements = {point:{radius:0}, line:{tension:0.2}};
+  const stockSets = [["原始热缓冲","--c6"],["留存·标准层","--c1"],["留存·归档","--c4"],["留存·深度归档","--c2"],["成品库","--c3"]];
+  cStock = new Chart(document.getElementById("cStock"), {type:"line", data:{labels, datasets:stockSets.map((s,i)=>({label:s[0], data:[], fill:i===0?"origin":"-1", backgroundColor:cssv(s[1])+"CC", borderColor:cssv(s[1]), borderWidth:1}))}, options:o2});
+  const o3 = baseOpts();
+  o3.indexAxis = "y";
+  o3.plugins.legend = {display:false};
+  o3.plugins.tooltip = {callbacks:{label:c=>{const v=c.raw; return `−30%：${v.lo>=0?"+":""}${n0(v.lo)} 万　+30%：${v.hi>=0?"+":""}${n0(v.hi)} 万`;}}};
+  o3.scales = {x:{stacked:false, ticks:{color:cssv("--muted"), font:{size:11}}, grid:{color:cssv("--line")}}, y:{stacked:true, ticks:{color:cssv("--ink"), font:{size:12}}, grid:{display:false}}};
+  o3.parsing = {xAxisKey:"x", yAxisKey:"y"};
+  cTornado = new Chart(document.getElementById("cTornado"), {type:"bar", data:{labels:[], datasets:[{data:[], backgroundColor:cssv("--accent"), borderWidth:0, borderSkipped:false}]}, options:o3});
+}
+
+/* ---------- sensitivity ---------- */
+const SENS = [
+  ["每日采集小时数", (p,f)=>p.mod.forEach(m=>m.h*=f)],
+  ["原始码率", (p,f)=>p.mod.forEach(m=>m.raw*=f)],
+  ["交付格式码率", (p,f)=>p.mod.forEach(m=>m.del*=f)],
+  ["热缓冲天数", (p,f)=>p.hotDays*=f],
+  ["原始留存比例", (p,f)=>p.retain=Math.min(100,p.retain*f)],
+  ["标准层停留天数", (p,f)=>p.stdDays*=f],
+  ["云存储价格", (p,f)=>p.discount*=f],
+  ["GPU 卡时系数", (p,f)=>p.gpuScale*=f],
+  ["云 GPU 单价", (p,f)=>p.gpuPrice*=f],
+  ["交付量", (p,f)=>p.deliverRatio*=f],
+  ["公网出流量单价", (p,f)=>p.egressPrice*=f],
+  ["自建存储造价", (p,f)=>p.idcStorCapex*=f],
+  ["自建 GPU 造价", (p,f)=>p.idcGpuCapex*=f]
+];
+function sensitivity(baseTotal){
+  return SENS.map(([name,fn])=>{
+    const lo=clone(P); fn(lo,0.7); const hi=clone(P); fn(hi,1.3);
+    const dl=wan(sum36(run(lo),P.view)-baseTotal), dh=wan(sum36(run(hi),P.view)-baseTotal);
+    return {name, lo:dl, hi:dh, span:Math.abs(dh-dl)};
+  }).filter(s=>s.span>0.5).sort((a,b)=>b.span-a.span).slice(0,10);
+}
+
+/* ---------- render ---------- */
+function deltaHTML(cur, prev, fmt, lowerIsBetter=true){
+  if(prev==null || !isFinite(prev)) return "";
+  const d = cur-prev; if(Math.abs(d) < Math.abs(prev)*0.001) return `<span>与基线持平</span>`;
+  const good = lowerIsBetter ? d<0 : d>0;
+  const pctTxt = prev!==0 ? ` (${d>0?"+":""}${(d/Math.abs(prev)*100).toFixed(0)}%)` : "";
+  return `<span class="${good?"down":"up"}">较基线 ${d>0?"+":""}${fmt(d)}${pctTxt}</span>`;
+}
+let res = null;
+function render(){
+  res = run(P);
+  const mi = Math.min(MONTHS, Math.max(1, P.month))-1;
+  const r = res[mi];
+  document.getElementById("monthLbl").textContent = mi+1;
+  document.getElementById("monthSel").value = mi+1;
+
+  const PB = v=>v/1e6;
+  document.getElementById("flow").innerHTML = [
+    {nm:"采集", v:n0(r.hDay), u:"小时/天", d:P.mod.map(m=>`${m.name.split(" ")[0]} ${n0(m.h*Math.pow(1+P.growth/100,mi))}`).join("　")},
+    {nm:"原始数据流入", v:n1(PB(r.rawDay)), u:"PB/天", d:`持续上行约 ${n0(r.gbps)} Gbps`},
+    {nm:"热缓冲", v:n1(PB(r.buf+r.std)), u:"PB", d:`缓冲 ${P.hotDays} 天，含 ${n1(PB(r.std))} PB 留存热数据`},
+    {nm:"处理", v:n0(r.gpuH/1e4), u:"万卡时/月", d:`CPU ${n0(r.cpuH/1e4)} 万核时/月${r.cards?`，IDC ${n0(r.cards)} 卡`:""}`},
+    {nm:"存储库", v:n0(PB(r.std+r.arc+r.deep+r.prod)), u:"PB", d:`原始留存 ${n0(PB(r.std+r.arc+r.deep))}，成品 ${n0(PB(r.prod))}`},
+    {nm:"交付", v:n0(r.dlvH/1e4), u:"万小时/月", d:`约 ${n1(r.dlvGB/1e6)} PB/月`}
+  ].map(s=>`<div class="stage"><div class="nm">${s.nm}</div><div class="v">${s.v}<small>${s.u}</small></div><div class="d">${s.d}</div></div>`).join("");
+
+  const monthCost = tot(r,P.view), total = sum36(res,P.view);
+  const perHour = r.dlvH>0 ? monthCost/r.dlvH : NaN;
+  const margin = (P.salePrice>0 && isFinite(perHour)) ? (P.salePrice-perHour)/P.salePrice*100 : NaN;
+  const B = base;
+  document.getElementById("kpis").innerHTML = [
+    {nm:"每交付一小时的成本", v:isFinite(perHour)?`${n1(perHour)}<small>元</small>`:"—", d:B?deltaHTML(perHour,B.perHour,v=>n1(v)+" 元"):""},
+    {nm:`第 ${mi+1} 个月月成本`, v:money(monthCost), d:B?deltaHTML(monthCost,B.monthCost,moneyTxt):""},
+    {nm:`36 个月合计（${P.view==="cash"?"现金流":"摊销"}）`, v:money(total), d:B?deltaHTML(total,B.total,moneyTxt):""},
+    {nm:"毛利率", v:isFinite(margin)?`${margin.toFixed(0)}<small>%</small>`:`<small>填入售价后显示</small>`, d:(B&&isFinite(margin)&&isFinite(B.margin))?deltaHTML(margin,B.margin,v=>v.toFixed(0)+" 个百分点",false):""}
+  ].map(k=>`<div class="kpi"><div class="nm">${k.nm}</div><div class="v">${k.v}</div><div class="delta">${k.d}</div></div>`).join("");
+
+  const key = P.view==="cash"?"cash":"am";
+  document.getElementById("costSub").textContent = `单位：万元/月，${P.view==="cash"?"现金流口径：自建设备在采购当月一次计入":"摊销口径：自建设备按折旧年限平摊"}`;
+  CATS.forEach((c,i)=>{ cCost.data.datasets[i].data = res.map(x=>wan(x[key][c.k])); });
+  cCost.update("none");
+  const st = [x=>x.buf, x=>x.std, x=>x.arc, x=>x.deep, x=>x.prod];
+  st.forEach((f,i)=>{ cStock.data.datasets[i].data = res.map(x=>PB(f(x))); });
+  cStock.update("none");
+
+  const s = sensitivity(total);
+  cTornado.data.labels = s.map(x=>x.name);
+  cTornado.data.datasets[0].data = s.map(x=>({y:x.name, x:[Math.min(x.lo,x.hi), Math.max(x.lo,x.hi)], lo:x.lo, hi:x.hi}));
+  cTornado.options.plugins.tooltip.callbacks.label = c=>{ const v=c.raw; return `−30%：${v.lo>=0?"+":""}${n0(v.lo)} 万　+30%：${v.hi>=0?"+":""}${n0(v.hi)} 万`; };
+  cTornado.update("none");
+  document.getElementById("tornadoSub").textContent = `每个参数单独 ±30%，36 个月总成本的变化（万元）。当前合计 ${moneyTxt(total)}。`;
+
+  document.getElementById("compTitle").textContent = `第 ${mi+1} 个月成本明细`;
+  const rows = CATS.map(c=>({c, v:r[key][c.k]})).filter(x=>x.v>0.5);
+  document.getElementById("compTbl").innerHTML = `<thead><tr><th>项目</th><th class="n">万元/月</th><th class="n">占比</th></tr></thead><tbody>` +
+    rows.map(x=>`<tr><td><span class="sw" style="background:${cssv(x.c.c)}"></span>${x.c.n}</td><td class="n">${n0(wan(x.v))}</td><td class="n">${monthCost>0?(x.v/monthCost*100).toFixed(1):0}%</td></tr>`).join("") +
+    `<tr><td><b>合计</b></td><td class="n"><b>${n0(wan(monthCost))}</b></td><td class="n">100%</td></tr></tbody>`;
+
+  const hsum = P.mod.reduce((a,m)=>a+m.h,0), rsum = P.mod.reduce((a,m)=>a+m.h*m.raw,0);
+  const ms = document.getElementById("modSum"); if(ms) ms.textContent = `合计 ${n0(hsum)} 小时/天，原始约 ${n1(rsum/1e6)} PB/天，加权 ${hsum?n1(rsum/hsum):0} GB/小时`;
+  document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("on", b.dataset.view===P.view));
+  syncSide();
+  window._last = {perHour, monthCost, total, margin};
+}
+let timer=null;
+function schedule(){ clearTimeout(timer); timer=setTimeout(render, 60); }
+
+/* ---------- toolbar ---------- */
+function markPreset(id){ document.querySelectorAll("#presets .btn").forEach(b=>b.classList.toggle("on", b.dataset.p===id)); }
+function toast(t){ const el=document.getElementById("toast"); el.textContent=t; setTimeout(()=>{ if(el.textContent===t) el.textContent=""; }, 2500); }
+function initToolbar(){
+  document.getElementById("presets").innerHTML = PRESETS.map(p=>`<button class="btn" data-p="${p.id}">${p.name}</button>`).join("");
+  document.getElementById("presets").addEventListener("click", e=>{
+    const b=e.target.closest("[data-p]"); if(!b) return;
+    const pr=PRESETS.find(x=>x.id===b.dataset.p);
+    const keep={view:P.view, month:P.month};
+    P = Object.assign(pr.apply(clone(DEF)), keep);
+    markPreset(pr.id); render();
+  });
+  document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>{ P.view=b.dataset.view; render(); }));
+  document.getElementById("monthSel").addEventListener("input", e=>{ P.month=+e.target.value; schedule(); });
+  document.getElementById("setBase").addEventListener("click",()=>{
+    base = Object.assign({}, window._last);
+    try{ localStorage.setItem("rdcm-base", JSON.stringify(base)); }catch(e){}
+    render(); toast("已设为对比基线，之后的调整会显示差值");
+  });
+  document.getElementById("clearBase").addEventListener("click",()=>{
+    base=null; try{ localStorage.removeItem("rdcm-base"); }catch(e){}
+    render(); toast("已清除基线");
+  });
+  document.getElementById("share").addEventListener("click", async ()=>{
+    const s = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(P)))));
+    const url = location.href.split("#")[0] + "#s=" + s;
+    try{ history.replaceState(null,"","#s="+s); }catch(e){}
+    try{ await navigator.clipboard.writeText(url); toast("链接已复制，打开即可还原当前参数"); }
+    catch(e){ window.prompt("复制这个链接：", url); }
+  });
+}
+
+/* ---------- boot ---------- */
+buildSide();
+initToolbar();
+if(!location.hash) markPreset("base");
+if(window.Chart){ initCharts(); render(); }
+else { document.querySelector(".main").insertAdjacentHTML("afterbegin", `<div class="card">图表库加载失败，请检查网络后刷新页面。</div>`); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(!window.Chart) return; cCost.destroy(); cStock.destroy(); cTornado.destroy(); initCharts(); render(); });
+})();
+</script>
+</body>
+</html>
