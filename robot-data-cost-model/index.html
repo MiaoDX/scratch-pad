@@ -123,6 +123,21 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
 .tbl td:first-child{font-size:12.5px;padding-right:6px}
 .legend-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 
+.q{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);color:var(--muted);font-size:11px;line-height:1;cursor:pointer;padding:0;margin-left:5px;vertical-align:1px;flex:none;font-family:var(--sans)}
+.q:hover,.q[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+#pop{position:absolute;z-index:50;width:min(300px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:13.5px;line-height:1.55;display:none}
+#pop b{display:block;margin-bottom:3px}
+#pop a{font-size:13px;display:inline-block;margin-top:4px}
+.presetdesc{font-size:13px;color:var(--muted);margin:8px 0 0;max-width:90ch}
+.principles ul{margin:0;padding-left:1.2em;font-size:14px}
+.principles li{margin:6px 0;max-width:80ch}
+.live{margin-top:12px;padding:8px 12px;background:var(--accent-soft);border-radius:6px;font-size:13.5px}
+.gloss .grp-t{font-size:14.5px;margin:18px 0 4px}
+.gloss .grp-t:first-of-type{margin-top:4px}
+.gi{padding:6px 8px;border-radius:6px;scroll-margin-top:16px}
+.gi:target{background:var(--accent-soft)}
+.gi h4{font-size:14px;margin:0}
+.gi p{margin:2px 0 0;font-size:13.5px;max-width:80ch}
 .info h3{font-size:14.5px;margin:18px 0 6px}
 .info h3:first-of-type{margin-top:4px}
 .info ul{margin:0;padding-left:1.2em;font-size:13.5px}
@@ -132,22 +147,37 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
 <body>
 <header class="top">
   <h1>机器人数据管线成本模型</h1>
-  <p>从采集小时数出发，推算存储、算力、传输与交付的月度成本，以及每交付一小时数据的成本。右侧参数全部可调。默认值均为示例估计，不代表任何公司的真实数据；云厂商价格为 2026 年 9 月查询的公开牌价，未含企业折扣。</p>
+  <p>从采集小时数出发，推算存储、算力、传输与交付的月度成本，以及每交付一小时数据的成本。右侧参数全部可调，带 ? 的词可以点开看解释。默认值均为示例估计，不代表任何公司的真实数据；云厂商价格为 2026 年 9 月查询的公开牌价，未含企业折扣。</p>
   <div class="toolbar">
     <div class="grp" id="presets" role="group" aria-label="预设情景"></div>
     <div class="grp" role="group" aria-label="成本口径">
-      <button class="btn" data-view="amort">摊销口径</button>
-      <button class="btn" data-view="cash">现金流口径</button>
+      <button class="btn" data-view="amort">按年分摊</button>
+      <button class="btn" data-view="cash">按付款时间</button>
+      <button class="q" data-g="view" aria-label="解释：两种成本看法" style="align-self:center;margin:0 4px">?</button>
     </div>
-    <button class="btn solid" id="setBase">设为对比基线</button>
+    <button class="btn solid" id="setBase">设为对比基线</button><button class="q" data-g="baseline" aria-label="解释：对比基线" style="margin-left:-4px">?</button>
     <button class="btn solid" id="clearBase">清除基线</button>
     <button class="btn solid" id="share">复制当前情景链接</button>
     <span class="toast" id="toast" aria-live="polite"></span>
   </div>
+  <p class="presetdesc" id="presetDesc"></p>
 </header>
 
 <div class="app">
   <main class="main">
+    <section class="card principles">
+      <h2>设计原则</h2>
+      <p class="sub">不随参数变化的几条规律。具体金额以下方模型为准。</p>
+      <ul>
+        <li><b>留多少原始数据，是成本的第一大杠杆。</b>这是业务决策而不是技术决策：留得越多，将来重新标注、换算法重跑的余地越大，但 3 年成本可能相差数倍。</li>
+        <li><b>存进云里免费，拿出来贵。</b>上传不收流量费，公网下载约 0.25–0.5 元/GB，交付 1 PB 约 25–50 万元。客户分布在不同云上时，是在客户所在的云多存一份副本，还是每次交付付出流量费，要按交付频率算：1 PB 放在低频档约 8 万元/月，如果该云上的客户每 3–6 个月就会取一次同一批数据，放副本更划算。（这项取舍当前模型未计算，交付只按出流量计。）</li>
+        <li><b>原始数据放在会重新处理它的地方，可交付数据放在离客户近的地方。</b>在自建机房处理、把结果上传到云上便宜的低频档，方向是对的；但原始数据一旦放进云上冷档，将来拉回机房重跑要付取回费加出流量费，所以原始数据宜留在机房。</li>
+        <li><b>入库前把小文件聚合成大文件。</b>把散帧、散传感器片段打包成 MCAP、Lance 或 WebDataset。低频及更冷的档次按 64 KB 起计费，请求费按文件个数收，训练加载也更快。这一条几乎没有反例。</li>
+        <li><b>热缓冲期是一笔固定开销。</b>每天 1 PB、缓冲 30 天，意味着常驻约 30 PB 标准存储，默认价格下每月约 300 万元，与留存比例无关。缩短缓冲期取决于处理管线的速度。</li>
+      </ul>
+      <div class="live" id="live"></div>
+    </section>
+
     <section class="card" aria-label="数据流与核心指标">
       <div class="flow" id="flow"></div>
       <div class="flowbar" aria-hidden="true"></div>
@@ -163,13 +193,13 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
 
     <div class="two">
       <section class="card">
-        <h2>存储存量</h2>
-        <p class="sub">单位：PB。成品库指交付格式的数据，按全部保留计算。</p>
+        <h2>存储存量<button class="q" data-g="tiers" aria-label="解释：存储档次">?</button></h2>
+        <p class="sub">单位：PB。可交付数据按全部长期保留计算。</p>
         <div class="chartbox short"><canvas id="cStock"></canvas></div>
       </section>
       <section class="card">
-        <h2>哪些参数最影响总成本</h2>
-        <p class="sub" id="tornadoSub">每个参数单独 ±30%，36 个月总成本的变化（万元）</p>
+        <h2>哪些参数最影响总成本<button class="q" data-g="sens" aria-label="解释：敏感性分析">?</button></h2>
+        <p class="sub" id="tornadoSub"></p>
         <div class="chartbox short"><canvas id="cTornado"></canvas></div>
       </section>
     </div>
@@ -177,6 +207,12 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
     <section class="card">
       <h2 id="compTitle">第 12 个月成本明细</h2>
       <div class="scroll"><table id="compTbl"></table></div>
+    </section>
+
+    <section class="card gloss" id="glossary">
+      <h2>名词解释</h2>
+      <p class="sub">页面中带 ? 的词，点开是一句话定义，这里是完整说明。</p>
+      <div id="glossBody"></div>
     </section>
 
     <section class="card info">
@@ -208,10 +244,10 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
       <h3>模型怎么算</h3>
       <ul>
         <li>码率换算：GB/小时 ≈ 码率（Mbps）× 0.45。例如 1080p30 约 15 Mbps ≈ 6.75 GB/小时。</li>
-        <li>每月按 30 天；1 PB = 10⁶ GB。未留存的原始数据只在热缓冲期内占用标准层；留存部分按数据年龄依次停留在标准层、归档、深度归档。</li>
-        <li>自建 IDC：按所需容量（加冗余余量）分批采购，只增不减。摊销口径把采购额按折旧年限平摊；现金流口径在采购当月一次计入。</li>
+        <li>每月按 30 天；1 PB = 10⁶ GB。未留存的原始数据只在热缓冲期内占用标准档；留存部分按数据年龄依次停留在标准档、归档、深度归档。</li>
+        <li>自建机房：按所需容量（加余量）分批采购，只增不减。"按年分摊"把采购额按折旧年限逐月平摊；"按付款时间"在采购当月一次计入。</li>
         <li>跨地点传输：处理地点与热数据地点不一致的部分、留存数据从热层迁往冷层地点不一致的部分，按跨地点单价计费。</li>
-        <li>未计入：数据取回费、请求费、跨地域容灾复制、人员成本（IDC 运维人力可并入"运营成本"参数）。</li>
+        <li>未计入：数据取回费、请求费、跨地域容灾复制、多云副本，以及人员成本（机房运维人力可并入"运营"参数）。</li>
       </ul>
     </section>
   </main>
@@ -219,6 +255,7 @@ td.n,th.n{text-align:right;font-family:var(--num);font-variant-numeric:tabular-n
   <aside class="side" id="side" aria-label="参数"></aside>
 </div>
 
+<div id="pop" role="dialog" aria-live="polite"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 (function(){
@@ -258,11 +295,51 @@ const DEF = {
   view:"amort", month:12
 };
 const PRESETS = [
-  {id:"base", name:"基准", apply:p=>p},
-  {id:"lean", name:"精简留存", apply:p=>{p.retain=10;p.hotDays=14;p.stdDays=60;return p;}},
-  {id:"all", name:"全量留存", apply:p=>{p.retain=100;return p;}},
-  {id:"hybrid", name:"混合自建", apply:p=>{p.coldIDC=80;p.productIDC=50;p.computeIDC=50;return p;}}
+  {id:"base", name:"基准", desc:"默认估计参数：每天约 1 PB 原始数据，处理后保留 30%，全部放在云上。", apply:p=>p},
+  {id:"lean", name:"精简留存", desc:"只保留 10% 的原始数据，热缓冲缩短到 14 天，留存数据 60 天后即转入归档。看“少留一点”能省多少。", apply:p=>{p.retain=10;p.hotDays=14;p.stdDays=60;return p;}},
+  {id:"all", name:"全量留存", desc:"所有原始数据都长期保留，其余同基准。看“什么都不删”的成本上限。", apply:p=>{p.retain=100;return p;}},
+  {id:"hybrid", name:"部分自建", desc:"80% 的冷数据、50% 的可交付数据和 50% 的计算放在自建机房，其余在云上。自建成本目前为占位值。", apply:p=>{p.coldIDC=80;p.productIDC=50;p.computeIDC=50;return p;}}
 ];
+const GLOSS = [
+  {grp:"看结果", items:[
+    ["perHour","每交付一小时的成本","当月总成本除以当月交付的数据小时数。","把存储、算力、传输、交付全部摊到卖出的每一小时数据上，可以直接和售价比较。交付量越大，单位成本越低，因为存储和缓冲这类成本不随交付量增加。"],
+    ["view","按年分摊 / 按付款时间","两种看成本的方式，只影响自建机房的设备采购款。","按年分摊：设备款按折旧年限拆到每个月，适合比较长期哪种方案更划算。按付款时间：设备在买的当月一次计入，适合看每个月要准备多少现金。3 年总额可能差很多，因为设备到第 3 年末还没用完，按年分摊只计入了用掉的部分。全部上云时两者相同。"],
+    ["baseline","对比基线","把当前结果存为参照，之后调整参数时显示差值。","开会时可以先把“基准”设为基线，再尝试别人提的方案，每个指标下方会显示比基线多或少多少。基线只保存在你自己的浏览器里。"],
+    ["sens","敏感性分析（哪些参数最影响总成本）","每次只改一个参数，看总成本变化多少。","每个参数分别调低 30% 和调高 30%，其他不变，计算 36 个月总成本比当前方案少多少（负数）或多多少（正数）。条越长，说明这个参数对结论影响越大，越值得花力气拿到真实数据；条很短的参数粗估即可。"]
+  ]},
+  {grp:"预设情景", items:[
+    ["p_base","基准","默认估计参数，全部上云，保留 30% 原始数据。","每天约 4.2 万小时采集、约 1 PB 原始数据；原始数据处理完保留 30%；可交付数据全部保留；全部放在云上。"],
+    ["p_lean","精简留存","只留 10% 原始数据，缩短缓冲和标准档停留时间。","保留 10% 原始数据，热缓冲 14 天，留存数据在标准档停留 60 天后转归档。用来回答“如果我们少留一些，能省多少”。"],
+    ["p_all","全量留存","所有原始数据都长期保留。","原始数据 100% 保留，其余同基准。用来看成本上限。"],
+    ["p_hybrid","部分自建","冷数据、部分可交付数据和部分计算放自建机房。","80% 冷数据、50% 可交付数据、50% 计算放在自建机房。注意自建相关成本目前都是占位值，这个情景的结论要等拿到机房报价后才可靠。"]
+  ]},
+  {grp:"数据与存储", items:[
+    ["hotDays","原始数据热缓冲期","新采集的原始数据在处理完之前，放在随时可读的标准档里的天数。","所有原始数据都要先放在标准档等待解析、标注、重建等处理。缓冲期越长，常驻的数据越多：每天 1 PB、缓冲 30 天就是常驻约 30 PB。能缩短多少取决于处理管线的速度。"],
+    ["retain","原始数据长期留存比例","处理完之后，还保留多少原始数据。","10% 表示只留十分之一，其余在热缓冲期结束后删除。留得越多，将来重新标注、换算法重跑的余地越大，但存储成本随时间线性累积。这是模型里影响最大的业务决策之一。"],
+    ["tiers","存储档次：标准 / 低频 / 归档 / 深度归档","同一份数据在云上的四种存放方式，越往后越便宜，但读取越慢、越贵。","标准：随时读，读取不额外收费，约 0.1 元/GB/月。低频：随时读，但按读取量收费，最少存 30 天。归档：读之前要先“解冻”（几分钟到几小时），最少存 60–90 天。深度归档：解冻要数小时，最少存 180 天，约 0.01 元/GB/月。打个比方：标准是书桌上，低频是书柜里，归档是地下室，深度归档是城外仓库。提前删除或转档，仍按最短天数收费。"],
+    ["stdDays","留存数据在标准档停留","保留下来的原始数据，先在标准档放多少天再转入归档。","这段时间内数据可能还会被频繁重新处理，所以放在随时可读的标准档；之后转入更便宜的归档。"],
+    ["arcDays","满多少天转深度归档","数据年龄超过这个天数后，从归档转入最便宜的深度归档。","深度归档最便宜，但解冻需要数小时且有取回费，适合基本不会再动的数据。"],
+    ["deliverable","可交付数据","处理完、按客户格式整理好、可以直接出售的数据。","通常比原始数据小（重新压缩、裁剪），但会被多个客户反复购买，所以默认全部长期保留，放在低频档。"],
+    ["discount","实付占牌价比例","实际成交价相对公开牌价的比例。","PB 级采购通常能谈到折扣。拿到正式报价后，把这里改成实际比例即可，所有云存储费用会同比变化。"]
+  ]},
+  {grp:"算力", items:[
+    ["gpuCoef","GPU 卡时 / CPU 核时系数","每处理 1 小时采集数据，需要用多少张卡跑多少小时。","1 卡时 = 一张 GPU 卡运行一小时；1 核时 = 一个 CPU 核运行一小时。例如手部重建系数 0.5，表示每小时数据需要一张卡跑半小时。覆盖比例表示这项任务作用于多少比例的数据。这些系数目前都是估计，用几十小时样本实测后替换最有价值。"],
+    ["spot","抢占式实例","云厂商把闲置机器低价出租，但随时可能收回。","价格最低可到按量价格的一成，但机器可能被中途收回。适合可以断点重跑的批量处理（如离线标注），不适合需要连续运行的服务。"],
+    ["util","利用率","自建 GPU 实际在干活的时间比例。","自建机器不管用不用都要付钱。利用率 70% 表示需要比满负荷多买约 40% 的卡才能跑完同样的任务量。"]
+  ]},
+  {grp:"部署与交付", items:[
+    ["idc","自建机房（IDC）","自己购买服务器、放在自有或托管机房里运行。","前期一次性投入大，之后每月只付电力、机柜、运维等费用。数据量大且稳定时通常比云便宜，但要自己承担容量规划、故障和扩容。模型里的自建成本全部是占位值，需要硬件和机房报价替换。"],
+    ["xfer","跨地点传输","数据在云和自建机房之间搬运的费用。","例如数据在云上、计算放在机房，就要把原始数据从云上拉到机房，按出流量或专线计费。计算尽量和数据放在一起。"],
+    ["uplink","上行专线","从采集现场把数据传到云或机房的网络带宽。","每天 1 PB 相当于持续约 93 Gbps，这是一条很粗的网络，价格和可用性都需要单独询价；也可以部分用寄硬盘的方式离线传输。"],
+    ["deliverRatio","交付量占当月产出","每月卖出的数据小时数，相对当月采集小时数的比例。","可以超过 100%：同一批数据可能卖给多个客户。"],
+    ["egress","公网出流量","把数据从云上通过互联网下载出去的费用。","上传免费、下载收费是各家云的通行做法，约 0.25–0.5 元/GB。交付给客户时，尽量让客户在同一云、同一地域内拷贝（免费），或寄硬盘。"]
+  ]},
+  {grp:"参数标签", items:[
+    ["tags","已查实 / 估计 / 占位 / 待决策","参数旁的标签说明这个数字的可信程度。","已查实：来自厂商公开价格或文档。估计：有一定依据的推测，建议实测。占位：暂时填的数字，必须换成真实报价。待决策：需要业务或管理层拍板的选择。"]
+  ]}
+];
+const GMAP = {}; GLOSS.forEach(g=>g.items.forEach(i=>{ GMAP[i[0]]={t:i[1], s:i[2], l:i[3]}; }));
+const q = (k,t)=>`<button class="q" data-g="${k}" aria-label="解释：${t||GMAP[k].t}">?</button>`;
 const clone = o=>JSON.parse(JSON.stringify(o));
 const MONTHS = 36, DAYS = 30;
 
@@ -364,31 +441,31 @@ const SECTIONS = [
     {k:"growth", l:"采集量月增长", u:"%/月", min:0, max:20, step:0.5, tag:"est"}
   ]},
   {title:"存储生命周期", open:true, items:[
-    {k:"hotDays", l:"原始数据热缓冲期", u:"天", min:3, max:90, step:1, tag:"est", tip:"全部原始数据在标准层等待处理的时长"},
-    {k:"retain", l:"原始数据长期留存比例", u:"%", min:0, max:100, step:5, tag:"dec", tip:"缓冲期结束后仍保留的原始数据比例"},
-    {k:"stdDays", l:"留存数据在标准层停留", u:"天", min:0, max:365, step:15, tag:"est", tip:"之后转入归档"},
-    {k:"arcDays", l:"满多少天转深度归档", u:"天", min:90, max:1095, step:15, tag:"est"},
-    {k:"productTier", l:"成品库存储层", type:"select", opts:[["std","标准"],["ia","低频"],["arc","归档"]], tag:"est", tip:"交付格式数据会被反复出售，默认放低频"}
+    {k:"hotDays", g:"hotDays", l:"原始数据热缓冲期", u:"天", min:3, max:90, step:1, tag:"est", tip:"全部原始数据在标准档等待处理的时长"},
+    {k:"retain", g:"retain", l:"原始数据长期留存比例", u:"%", min:0, max:100, step:5, tag:"dec", tip:"缓冲期结束后仍保留的原始数据比例"},
+    {k:"stdDays", g:"stdDays", l:"留存数据在标准档停留", u:"天", min:0, max:365, step:15, tag:"est", tip:"之后转入归档"},
+    {k:"arcDays", g:"arcDays", l:"满多少天转深度归档", u:"天", min:90, max:1095, step:15, tag:"est"},
+    {k:"productTier", g:"tiers", l:"可交付数据的存放档次", type:"select", opts:[["std","标准"],["ia","低频"],["arc","归档"]], tag:"est", tip:"可交付数据会被反复出售，默认放低频"}
   ]},
   {title:"云存储价格", items:[
     {type:"vendor"},
-    {k:"discount", l:"实付占牌价比例", u:"%", min:20, max:100, step:5, tag:"est", tip:"拿到正式报价后调整"}
+    {k:"discount", g:"discount", l:"实付占牌价比例", u:"%", min:20, max:100, step:5, tag:"est", tip:"拿到正式报价后调整"}
   ]},
   {title:"计算任务", note:"系数按每处理 1 小时采集数据计。默认值均为估计，建议用小样本实测后替换。", items:[
     {type:"wl"},
-    {k:"gpuScale", l:"GPU 系数整体倍率", u:"×", min:0.2, max:5, step:0.1, tag:"est"},
+    {k:"gpuScale", g:"gpuCoef", l:"GPU 系数整体倍率", u:"×", min:0.2, max:5, step:0.1, tag:"est"},
     {k:"gpuPrice", l:"云 GPU 单价（推理卡，按量）", u:"元/卡时", min:1, max:40, step:0.5, tag:"est"},
-    {k:"spotShare", l:"用抢占式实例的比例", u:"%", min:0, max:100, step:5, tag:"est"},
+    {k:"spotShare", g:"spot", l:"用抢占式实例的比例", u:"%", min:0, max:100, step:5, tag:"est"},
     {k:"spotDisc", l:"抢占式折扣幅度", u:"%", min:0, max:90, step:5, tag:"est", tip:"阿里云抢占式最高省 90%"},
     {k:"cpuPrice", l:"云 CPU 单价", u:"元/核时", min:0.02, max:0.5, step:0.01, tag:"ok", tip:"阿里云 c9i 按量，武汉地域"}
   ]},
-  {title:"部署位置", note:"放在自建 IDC 的比例，其余在云上。处理地点与数据地点不一致时会产生传输费用。", items:[
-    {k:"hotIDC", l:"热数据放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
-    {k:"coldIDC", l:"冷数据（归档/深度）放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
-    {k:"productIDC", l:"成品库放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"},
-    {k:"computeIDC", l:"计算任务放 IDC", u:"%", min:0, max:100, step:10, tag:"dec"}
+  {title:"部署位置", note:"放在自建机房的比例，其余在云上。处理地点与数据地点不一致时会产生传输费用。", items:[
+    {k:"hotIDC", g:"idc", l:"热数据放自建机房", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"coldIDC", g:"idc", l:"冷数据（归档/深度归档）放自建机房", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"productIDC", g:"deliverable", l:"可交付数据放自建机房", u:"%", min:0, max:100, step:10, tag:"dec"},
+    {k:"computeIDC", g:"idc", l:"计算任务放自建机房", u:"%", min:0, max:100, step:10, tag:"dec"}
   ]},
-  {title:"自建 IDC 成本", note:"以下均为占位值，需要硬件与机房报价替换。", items:[
+  {title:"自建机房成本", note:"以下均为占位值，需要硬件与机房报价替换。", items:[
     {k:"idcStorCapex", l:"存储造价（含冗余）", u:"万元/PB", min:10, max:200, step:5, tag:"ph"},
     {k:"idcStorOpex", l:"存储运营（电力/机柜/运维）", u:"万元/PB·月", min:0, max:10, step:0.1, tag:"ph"},
     {k:"idcStorYears", l:"存储折旧年限", u:"年", min:2, max:8, step:1, tag:"est"},
@@ -396,17 +473,17 @@ const SECTIONS = [
     {k:"idcGpuCapex", l:"GPU 造价（含服务器分摊）", u:"万元/卡", min:1, max:30, step:0.5, tag:"ph"},
     {k:"idcGpuOpex", l:"GPU 运营", u:"元/卡·月", min:0, max:5000, step:50, tag:"ph"},
     {k:"idcGpuYears", l:"GPU 折旧年限", u:"年", min:2, max:6, step:1, tag:"est"},
-    {k:"idcUtil", l:"IDC GPU 平均利用率", u:"%", min:20, max:100, step:5, tag:"est"},
-    {k:"idcCpuCost", l:"IDC CPU 折合成本", u:"元/核时", min:0.01, max:0.3, step:0.01, tag:"ph"}
+    {k:"idcUtil", g:"util", l:"自建 GPU 平均利用率", u:"%", min:20, max:100, step:5, tag:"est"},
+    {k:"idcCpuCost", l:"自建 CPU 折合成本", u:"元/核时", min:0.01, max:0.3, step:0.01, tag:"ph"}
   ]},
   {title:"传输与交付", items:[
-    {k:"uplinkPrice", l:"上行专线", u:"元/Gbps·月", min:0, max:20000, step:500, tag:"ph"},
-    {k:"xferPrice", l:"跨地点传输", u:"元/GB", min:0, max:0.8, step:0.01, tag:"ph"},
-    {k:"deliverRatio", l:"每月交付量占当月产出", u:"%", min:0, max:300, step:10, tag:"dec", tip:"可大于 100%：同一批数据卖给多个客户"},
+    {k:"uplinkPrice", g:"uplink", l:"上行专线", u:"元/Gbps·月", min:0, max:20000, step:500, tag:"ph"},
+    {k:"xferPrice", g:"xfer", l:"跨地点传输", u:"元/GB", min:0, max:0.8, step:0.01, tag:"ph"},
+    {k:"deliverRatio", g:"deliverRatio", l:"每月交付量占当月产出", u:"%", min:0, max:300, step:10, tag:"dec", tip:"可大于 100%：同一批数据卖给多个客户"},
     {k:"dlvInternal", l:"交付方式：客户同云内网", u:"份", min:0, max:100, step:5, tag:"est"},
     {k:"dlvPublic", l:"交付方式：公网下载", u:"份", min:0, max:100, step:5, tag:"est"},
     {k:"dlvDisk", l:"交付方式：寄盘", u:"份", min:0, max:100, step:5, tag:"est", tip:"三种方式按份数折算比例"},
-    {k:"egressPrice", l:"公网出流量单价", u:"元/GB", min:0, max:1, step:0.05, tag:"ok", tip:"阿里云闲时 0.25，忙时 0.50"},
+    {k:"egressPrice", g:"egress", l:"公网出流量单价", u:"元/GB", min:0, max:1, step:0.05, tag:"ok", tip:"阿里云闲时 0.25，忙时 0.50"},
     {k:"diskPrice", l:"寄盘成本", u:"元/TB", min:0, max:2000, step:50, tag:"ph"},
     {k:"salePrice", l:"对外售价", u:"元/小时", min:0, max:2000, step:10, tag:"dec", tip:"填入后显示毛利率"}
   ]}
@@ -414,7 +491,7 @@ const SECTIONS = [
 
 function fieldHTML(f){
   if(f.type==="select"){
-    return `<div class="field"><div class="fl"><label for="f-${f.k}">${f.l}</label>${tag(f.tag)}</div>
+    return `<div class="field"><div class="fl"><span><label for="f-${f.k}">${f.l}</label>${f.g?q(f.g):""}</span>${tag(f.tag)}</div>
       <div class="fi"><select id="f-${f.k}" data-k="${f.k}">${f.opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select></div>
       ${f.tip?`<div class="tip">${f.tip}</div>`:""}</div>`;
   }
@@ -428,7 +505,7 @@ function fieldHTML(f){
       </tbody></table><div class="tip" id="modSum"></div></div>`;
   }
   if(f.type==="wl"){
-    return `<div class="field"><div class="fl"><span>按任务</span>${tag("est")}</div>
+    return `<div class="field"><div class="fl"><span>按任务（每小时数据）${q("gpuCoef")}</span>${tag("est")}</div>
       <table class="tbl"><thead><tr><th></th><th>GPU 卡时</th><th>CPU 核时</th><th>覆盖 %</th></tr></thead><tbody>
       ${P.wl.map((w,i)=>`<tr><td>${w.name}</td>
         <td><input type="number" aria-label="${w.name} GPU 卡时" data-wl="${i}" data-f="gpu" step="0.05" min="0"></td>
@@ -443,14 +520,14 @@ function fieldHTML(f){
       ${["std","ia","arc","deep"].map(k=>`<td><input type="number" aria-label="${k} 单价" data-price="${k}" step="0.001" min="0"></td>`).join("")}
       </tr></tbody></table><div class="tip">单位 元/GB/月。手动修改后自动切换为"自定义"。</div></div>`;
   }
-  return `<div class="field"><div class="fl"><label for="f-${f.k}">${f.l}</label>${tag(f.tag)}</div>
+  return `<div class="field"><div class="fl"><span><label for="f-${f.k}">${f.l}</label>${f.g?q(f.g):""}</span>${tag(f.tag)}</div>
     <div class="fi"><input type="range" aria-label="${f.l}" data-k="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}">
     <input type="number" id="f-${f.k}" data-k="${f.k}" step="${f.step}" min="${f.min}"><span class="u">${f.u}</span></div>
     ${f.tip?`<div class="tip">${f.tip}</div>`:""}</div>`;
 }
 function buildSide(){
   const side = document.getElementById("side");
-  side.innerHTML = `<div class="legend-tags">${tag("ok")}${tag("est")}${tag("ph")}${tag("dec")}</div>` +
+  side.innerHTML = `<div class="legend-tags">${tag("ok")}${tag("est")}${tag("ph")}${tag("dec")}${q("tags")}</div>` +
     SECTIONS.map(s=>`<details class="sec" ${s.open?"open":""}><summary>${s.title}</summary><div class="body">
       ${s.note?`<p class="note">${s.note}</p>`:""}${s.items.map(fieldHTML).join("")}</div></details>`).join("");
   side.addEventListener("input", onInput);
@@ -494,15 +571,19 @@ function initCharts(){
   const o2 = baseOpts();
   o2.plugins.tooltip.callbacks = {label:c=>`${c.dataset.label}：${n1(c.raw)} PB`, title:c=>`第 ${c[0].label} 个月`};
   o2.elements = {point:{radius:0}, line:{tension:0.2}};
-  const stockSets = [["原始热缓冲","--c6"],["留存·标准层","--c1"],["留存·归档","--c4"],["留存·深度归档","--c2"],["成品库","--c3"]];
+  const stockSets = [["原始热缓冲","--c6"],["留存·标准档","--c1"],["留存·归档","--c4"],["留存·深度归档","--c2"],["可交付数据","--c3"]];
   cStock = new Chart(document.getElementById("cStock"), {type:"line", data:{labels, datasets:stockSets.map((s,i)=>({label:s[0], data:[], fill:i===0?"origin":"-1", backgroundColor:cssv(s[1])+"CC", borderColor:cssv(s[1]), borderWidth:1}))}, options:o2});
   const o3 = baseOpts();
   o3.indexAxis = "y";
-  o3.plugins.legend = {display:false};
-  o3.plugins.tooltip = {callbacks:{label:c=>{const v=c.raw; return `−30%：${v.lo>=0?"+":""}${n0(v.lo)} 万　+30%：${v.hi>=0?"+":""}${n0(v.hi)} 万`;}}};
-  o3.scales = {x:{stacked:false, ticks:{color:cssv("--muted"), font:{size:11}}, grid:{color:cssv("--line")}}, y:{stacked:true, ticks:{color:cssv("--ink"), font:{size:12}}, grid:{display:false}}};
-  o3.parsing = {xAxisKey:"x", yAxisKey:"y"};
-  cTornado = new Chart(document.getElementById("cTornado"), {type:"bar", data:{labels:[], datasets:[{data:[], backgroundColor:cssv("--accent"), borderWidth:0, borderSkipped:false}]}, options:o3});
+  o3.datasets = {bar:{grouped:false}};
+  o3.plugins.tooltip = {mode:"nearest", intersect:true, callbacks:{label:c=>{ const v=c.raw[1]; return `${c.dataset.label}：36 个月总成本${v>=0?"多":"少"} ${Math.abs(v).toFixed(2)} 亿`; }}};
+  o3.scales = {
+    x:{ticks:{color:cssv("--muted"), font:{size:11}}, title:{display:true, text:"与当前方案相比（亿元），0 = 当前方案", color:cssv("--muted"), font:{size:11}},
+       grid:{color:c=>c.tick&&c.tick.value===0?cssv("--ink"):cssv("--line"), lineWidth:c=>c.tick&&c.tick.value===0?1.5:1}},
+    y:{ticks:{color:cssv("--ink"), font:{size:12}}, grid:{display:false}}};
+  cTornado = new Chart(document.getElementById("cTornado"), {type:"bar", data:{labels:[], datasets:[
+    {label:"该参数调低 30%", data:[], backgroundColor:cssv("--c4"), borderWidth:0, borderSkipped:false},
+    {label:"该参数调高 30%", data:[], backgroundColor:cssv("--c7"), borderWidth:0, borderSkipped:false}]}, options:o3});
 }
 
 /* ---------- sensitivity ---------- */
@@ -512,7 +593,7 @@ const SENS = [
   ["交付格式码率", (p,f)=>p.mod.forEach(m=>m.del*=f)],
   ["热缓冲天数", (p,f)=>p.hotDays*=f],
   ["原始留存比例", (p,f)=>p.retain=Math.min(100,p.retain*f)],
-  ["标准层停留天数", (p,f)=>p.stdDays*=f],
+  ["标准档停留天数", (p,f)=>p.stdDays*=f],
   ["云存储价格", (p,f)=>p.discount*=f],
   ["GPU 卡时系数", (p,f)=>p.gpuScale*=f],
   ["云 GPU 单价", (p,f)=>p.gpuPrice*=f],
@@ -524,9 +605,9 @@ const SENS = [
 function sensitivity(baseTotal){
   return SENS.map(([name,fn])=>{
     const lo=clone(P); fn(lo,0.7); const hi=clone(P); fn(hi,1.3);
-    const dl=wan(sum36(run(lo),P.view)-baseTotal), dh=wan(sum36(run(hi),P.view)-baseTotal);
+    const dl=(sum36(run(lo),P.view)-baseTotal)/1e8, dh=(sum36(run(hi),P.view)-baseTotal)/1e8;
     return {name, lo:dl, hi:dh, span:Math.abs(dh-dl)};
-  }).filter(s=>s.span>0.5).sort((a,b)=>b.span-a.span).slice(0,10);
+  }).filter(s=>s.span>0.005).sort((a,b)=>b.span-a.span).slice(0,10);
 }
 
 /* ---------- render ---------- */
@@ -551,7 +632,7 @@ function render(){
     {nm:"原始数据流入", v:n1(PB(r.rawDay)), u:"PB/天", d:`持续上行约 ${n0(r.gbps)} Gbps`},
     {nm:"热缓冲", v:n1(PB(r.buf+r.std)), u:"PB", d:`缓冲 ${P.hotDays} 天，含 ${n1(PB(r.std))} PB 留存热数据`},
     {nm:"处理", v:n0(r.gpuH/1e4), u:"万卡时/月", d:`CPU ${n0(r.cpuH/1e4)} 万核时/月${r.cards?`，IDC ${n0(r.cards)} 卡`:""}`},
-    {nm:"存储库", v:n0(PB(r.std+r.arc+r.deep+r.prod)), u:"PB", d:`原始留存 ${n0(PB(r.std+r.arc+r.deep))}，成品 ${n0(PB(r.prod))}`},
+    {nm:"存储库", v:n0(PB(r.std+r.arc+r.deep+r.prod)), u:"PB", d:`原始留存 ${n0(PB(r.std+r.arc+r.deep))}，可交付 ${n0(PB(r.prod))}`},
     {nm:"交付", v:n0(r.dlvH/1e4), u:"万小时/月", d:`约 ${n1(r.dlvGB/1e6)} PB/月`}
   ].map(s=>`<div class="stage"><div class="nm">${s.nm}</div><div class="v">${s.v}<small>${s.u}</small></div><div class="d">${s.d}</div></div>`).join("");
 
@@ -560,29 +641,31 @@ function render(){
   const margin = (P.salePrice>0 && isFinite(perHour)) ? (P.salePrice-perHour)/P.salePrice*100 : NaN;
   const B = base;
   document.getElementById("kpis").innerHTML = [
-    {nm:"每交付一小时的成本", v:isFinite(perHour)?`${n1(perHour)}<small>元</small>`:"—", d:B?deltaHTML(perHour,B.perHour,v=>n1(v)+" 元"):""},
+    {nm:`每交付一小时的成本${q("perHour")}`, v:isFinite(perHour)?`${n1(perHour)}<small>元</small>`:"—", d:B?deltaHTML(perHour,B.perHour,v=>n1(v)+" 元"):""},
     {nm:`第 ${mi+1} 个月月成本`, v:money(monthCost), d:B?deltaHTML(monthCost,B.monthCost,moneyTxt):""},
-    {nm:`36 个月合计（${P.view==="cash"?"现金流":"摊销"}）`, v:money(total), d:B?deltaHTML(total,B.total,moneyTxt):""},
+    {nm:`36 个月合计（${P.view==="cash"?"按付款时间":"按年分摊"}）`, v:money(total), d:B?deltaHTML(total,B.total,moneyTxt):""},
     {nm:"毛利率", v:isFinite(margin)?`${margin.toFixed(0)}<small>%</small>`:`<small>填入售价后显示</small>`, d:(B&&isFinite(margin)&&isFinite(B.margin))?deltaHTML(margin,B.margin,v=>v.toFixed(0)+" 个百分点",false):""}
   ].map(k=>`<div class="kpi"><div class="nm">${k.nm}</div><div class="v">${k.v}</div><div class="delta">${k.d}</div></div>`).join("");
 
   const key = P.view==="cash"?"cash":"am";
-  document.getElementById("costSub").textContent = `单位：万元/月，${P.view==="cash"?"现金流口径：自建设备在采购当月一次计入":"摊销口径：自建设备按折旧年限平摊"}`;
+  document.getElementById("costSub").textContent = `单位：万元/月。${P.view==="cash"?"按付款时间：自建设备在采购当月一次计入":"按年分摊：自建设备款按折旧年限逐月平摊"}`;
   CATS.forEach((c,i)=>{ cCost.data.datasets[i].data = res.map(x=>wan(x[key][c.k])); });
   cCost.update("none");
   const st = [x=>x.buf, x=>x.std, x=>x.arc, x=>x.deep, x=>x.prod];
   st.forEach((f,i)=>{ cStock.data.datasets[i].data = res.map(x=>PB(f(x))); });
   cStock.update("none");
 
+  const rows = CATS.map(c=>({c, v:r[key][c.k]})).filter(x=>x.v>0.5);
   const s = sensitivity(total);
   cTornado.data.labels = s.map(x=>x.name);
-  cTornado.data.datasets[0].data = s.map(x=>({y:x.name, x:[Math.min(x.lo,x.hi), Math.max(x.lo,x.hi)], lo:x.lo, hi:x.hi}));
-  cTornado.options.plugins.tooltip.callbacks.label = c=>{ const v=c.raw; return `−30%：${v.lo>=0?"+":""}${n0(v.lo)} 万　+30%：${v.hi>=0?"+":""}${n0(v.hi)} 万`; };
+  cTornado.data.datasets[0].data = s.map(x=>[0, x.lo]);
+  cTornado.data.datasets[1].data = s.map(x=>[0, x.hi]);
   cTornado.update("none");
-  document.getElementById("tornadoSub").textContent = `每个参数单独 ±30%，36 个月总成本的变化（万元）。当前合计 ${moneyTxt(total)}。`;
+  document.getElementById("tornadoSub").textContent = `每次只改一个参数，其他不变：两段分别表示该参数调低、调高 30% 时，36 个月总成本比当前方案少（负数）或多（正数）多少亿元。条越长，这个参数越值得弄准。当前方案合计 ${moneyTxt(total)}。`;
+  const topCat = rows.slice().sort((a,b)=>b.v-a.v)[0];
+  document.getElementById("live").innerHTML = `当前情景下：第 ${mi+1} 个月最大的成本项是<b>${topCat?topCat.c.n:"—"}</b>（占 ${topCat&&monthCost>0?(topCat.v/monthCost*100).toFixed(0):0}%）；对 36 个月总成本影响最大的参数是<b>${s[0]?s[0].name:"—"}</b>。`;
 
   document.getElementById("compTitle").textContent = `第 ${mi+1} 个月成本明细`;
-  const rows = CATS.map(c=>({c, v:r[key][c.k]})).filter(x=>x.v>0.5);
   document.getElementById("compTbl").innerHTML = `<thead><tr><th>项目</th><th class="n">万元/月</th><th class="n">占比</th></tr></thead><tbody>` +
     rows.map(x=>`<tr><td><span class="sw" style="background:${cssv(x.c.c)}"></span>${x.c.n}</td><td class="n">${n0(wan(x.v))}</td><td class="n">${monthCost>0?(x.v/monthCost*100).toFixed(1):0}%</td></tr>`).join("") +
     `<tr><td><b>合计</b></td><td class="n"><b>${n0(wan(monthCost))}</b></td><td class="n">100%</td></tr></tbody>`;
@@ -597,7 +680,38 @@ let timer=null;
 function schedule(){ clearTimeout(timer); timer=setTimeout(render, 60); }
 
 /* ---------- toolbar ---------- */
-function markPreset(id){ document.querySelectorAll("#presets .btn").forEach(b=>b.classList.toggle("on", b.dataset.p===id)); }
+function markPreset(id){
+  document.querySelectorAll("#presets .btn").forEach(b=>b.classList.toggle("on", b.dataset.p===id));
+  const pr = PRESETS.find(x=>x.id===id);
+  document.getElementById("presetDesc").innerHTML = pr ? `<b>${pr.name}：</b>${pr.desc}` : "当前为自定义参数（已在预设基础上修改）。";
+}
+function buildGlossary(){
+  document.getElementById("glossBody").innerHTML = GLOSS.map(g=>`<h3 class="grp-t">${g.grp}</h3>` +
+    g.items.map(i=>`<div class="gi" id="gl-${i[0]}"><h4>${i[1]}</h4><p>${i[3]}</p></div>`).join("")).join("");
+}
+const pop = document.getElementById("pop");
+let popBtn = null;
+function closePop(){ pop.style.display="none"; if(popBtn) popBtn.setAttribute("aria-expanded","false"); popBtn=null; }
+document.addEventListener("click", e=>{
+  const b = e.target.closest(".q");
+  if(b){
+    e.preventDefault(); e.stopPropagation();
+    if(popBtn===b){ closePop(); return; }
+    closePop();
+    const g = GMAP[b.dataset.g]; if(!g) return;
+    pop.innerHTML = `<b>${g.t}</b>${g.s}<br><a href="#gl-${b.dataset.g}">详细说明</a>`;
+    pop.style.display = "block";
+    const r = b.getBoundingClientRect(), w = pop.offsetWidth;
+    let left = r.left + window.scrollX - 8;
+    left = Math.max(window.scrollX+12, Math.min(left, window.scrollX + document.documentElement.clientWidth - w - 12));
+    pop.style.left = left+"px"; pop.style.top = (r.bottom + window.scrollY + 6)+"px";
+    b.setAttribute("aria-expanded","true"); popBtn = b;
+    return;
+  }
+  if(e.target.closest("#pop a")){ closePop(); return; }
+  if(!e.target.closest("#pop")) closePop();
+});
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closePop(); });
 function toast(t){ const el=document.getElementById("toast"); el.textContent=t; setTimeout(()=>{ if(el.textContent===t) el.textContent=""; }, 2500); }
 function initToolbar(){
   document.getElementById("presets").innerHTML = PRESETS.map(p=>`<button class="btn" data-p="${p.id}">${p.name}</button>`).join("");
@@ -629,9 +743,10 @@ function initToolbar(){
 }
 
 /* ---------- boot ---------- */
+buildGlossary();
 buildSide();
 initToolbar();
-if(!location.hash) markPreset("base");
+if(!location.hash || !/s=/.test(location.hash)) markPreset("base"); else markPreset(null);
 if(window.Chart){ initCharts(); render(); }
 else { document.querySelector(".main").insertAdjacentHTML("afterbegin", `<div class="card">图表库加载失败，请检查网络后刷新页面。</div>`); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(!window.Chart) return; cCost.destroy(); cStock.destroy(); cTornado.destroy(); initCharts(); render(); });
