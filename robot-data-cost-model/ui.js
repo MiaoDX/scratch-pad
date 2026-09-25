@@ -13,6 +13,9 @@
   function field(container,p,path,label,options={}){
     const row=node('div',undefined,'field'+(options.wide?' wide':'')),lab=node('label',label);
     const id='f-'+path.replaceAll('.','-');lab.htmlFor=id;
+    const C=window.ReportContent;
+    if(C){const g=options.g!==undefined?options.g:C.glossFor(path),t=options.tag!==undefined?options.tag:C.tagFor(path);
+      const qb=g?C.q(g):null;if(qb)lab.append(qb);const tn=t?C.tag(t):null;if(tn)lab.append(tn);}
     if(options.note)lab.append(node('small',options.note));
     let input;
     if(options.choices){input=node('select');options.choices.forEach(([v,t])=>{const o=node('option',t);o.value=v;input.append(o);});}

@@ -8,7 +8,7 @@
   else root.RDCM = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const VERSION = '2.1.0', AS_OF = '2026-09-24', MONTH = 30;
+  const VERSION = '2.2.0', AS_OF = '2026-09-24', MONTH = 30;
   const clone = x => JSON.parse(JSON.stringify(x));
   const sum = xs => xs.reduce((a, b) => a + b, 0);
   const numeric = (v, name, min = 0, max = 1e18) => {
@@ -256,34 +256,53 @@
     }
     return out;
   }
-  // Executive view: stable inventory; no first-year ramp, no archive tiers.
+  // Rolling IDC window: how many days of raw data fit into existing IDC capacity.
+  // Non-retained raw occupies the hot buffer; retained raw stays until the window ends.
+  // Constant daily volume (growth ignored); never shorter than the hot buffer.
+  function idcWindowDays(p) {
+    const q=quantities(p), ret=p.retain/100;
+    if(!q.raw || ret<=0) return p.hotDays;
+    const usable=p.existingPB*1e6/(1+p.idcHeadroom/100);
+    const w=Math.floor((usable/q.raw-(1-ret)*p.hotDays)/ret);
+    return Math.max(p.hotDays, Math.min(3650, w));
+  }
+  // Executive view: three layouts for the same business requirement, each run through
+  // the detailed simulation for 36 months. Business inputs are in collection hours.
+  const EXEC_SCHEMES=['standard','tiered','window'];
+  function executiveParams(input,fixed={},id='standard') {
+    const x={hours:41900,rawDays:0,prodDays:0,deliveryHours:600000,load:1,...input};
+    numeric(x.hours,'每日采集小时',0,1e8);numeric(x.deliveryHours,'每月交付小时',0,1e11);numeric(x.load,'计算负荷',0,10);
+    integer(x.rawDays,'原始数据保留天数');integer(x.prodDays,'可交付数据保留天数');
+    if(x.hours===0&&x.deliveryHours>0)throw new Error('零产出不能支撑持续交付；历史库存交付请使用详细版');
+    if(!EXEC_SCHEMES.includes(id))throw new Error('未知方案');
+    const p=Object.assign(clone(DEFAULT),clone(fixed));p.months=36;p.month=12;p.view='amort';
+    const baseH=sum(DEFAULT.mod.map(m=>m.h)),f=x.hours/baseH;
+    p.mod=p.mod.map(m=>({...m,h:m.h*f}));
+    p.deliverRatio=x.hours>0?x.deliveryHours/(x.hours*MONTH)*100:0;
+    p.retain=100;p.rawDays=x.rawDays;p.prodDays=x.prodDays;
+    p.gpuScale*=x.load;p.wl.forEach(w=>{w.cpu*=x.load;});
+    const cloud=()=>{p.hotPlace=p.coldPlace=p.packPlace=p.productPlace='cloud';p.wl.forEach(w=>w.place='cloud');p.existingPB=0;p.existingGPU=0;};
+    if(id==='standard'){cloud();p.productTier='std';p.stdDays=p.arcDays=36500;}
+    if(id==='tiered'){cloud();p.productTier='ia';p.coldTier='arc';p.stdDays=Math.max(90,p.hotDays);p.arcDays=Math.max(365,p.stdDays);}
+    if(id==='window'){
+      p.hotPlace=p.packPlace='idc';p.coldPlace=p.productPlace='cloud';p.wl.forEach(w=>w.place='idc');
+      p.productTier='ia';p.coldTier='arc';
+      validate(p);p.stdDays=idcWindowDays(p);p.arcDays=Math.max(365,p.stdDays);
+    }
+    return validate(p);
+  }
   function executive(input,fixed={}) {
-    const x={dailyTB:1000,days:90,deliveryTB:6000,load:1,...input};
-    numeric(x.dailyTB,'每日新增 TB',0,1e6);integer(x.days,'保留期',7,3650);numeric(x.deliveryTB,'月交付 TB',0,1e9);numeric(x.load,'计算负荷',0,10);
-    if(x.dailyTB===0&&x.deliveryTB>0)throw new Error('稳态零产出不能支撑持续交付；历史库存交付请使用独立情景');
-    const base=Object.assign(clone(DEFAULT),fixed);base.months=36;base.month=12;validate(base);
-    const dayGB=x.dailyTB*1000,rawGB=dayGB*30,prodGB=rawGB*0.2,h=rawGB/24;
-    return ['standard','tiered','hybrid'].map(id=>{
-      const p=clone(base),hybrid=id==='hybrid',tiered=id!=='standard';
-      p.productTier=tiered?'ia':'std';p.hotPlace=hybrid?'idc':'cloud';p.coldPlace=p.hotPlace;
-      p.packPlace=hybrid?'idc':'cloud';p.productPlace='cloud';p.gpuScale*=x.load;
-      p.wl.forEach(w=>{w.place=hybrid?'idc':'cloud';w.cpu*=x.load;});
-      const hotGB=dayGB*(tiered?7:x.days),coldGB=dayGB*Math.max(0,x.days-7),productGB=dayGB*0.2*30;
-      const rawStore=hybrid?0:capacityCost(p,hotGB,'std')+(tiered?capacityCost(p,coldGB,'ia'):0);
-      const comp=compute(p,h,rawGB,prodGB),dlv=delivery(p,x.deliveryTB*1000);
-      const reserve=hybrid?dayGB*x.days/1e6*(1+p.idcHeadroom/100):0;
-      const pb=hybrid?Math.ceil(reserve/p.blockPB)*p.blockPB:0,cards=hybrid?Math.ceil(comp.idcGpuHours/(720*p.idcUtil/100)):0;
-      const newPB=Math.max(0,pb-p.existingPB),newGPU=Math.max(0,cards-p.existingGPU);
-      const capex=newPB*p.idcStorCapex*1e4+newGPU*p.idcGpuCapex*1e4;
-      const minCharge=tiered&&!hybrid&&x.days>7?penalty(p,rawGB,'ia',Math.max(0,x.days-7)):0;
-      const read=tiered&&!hybrid?accessCost(p,coldGB*p.coldReadPct/100,'ia'):0;
-      const parts={storage:rawStore+capacityCost(p,productGB,p.productTier)+pb*p.idcStorOpex*1e4,
-        compute:comp.cloudGPU+comp.cloudCPU+comp.idcCPU+cards*p.idcGpuOpex,
-        network:comp.transfer+dayGB*8/86400*p.uplinkPrice+dlv.cost,
-        other:dlv.access+minCharge+read+p.accessBudget+p.controlBudget};
-      return {id,parts,monthly:sum(Object.values(parts)),capex,newPB,newGPU,pb,cards,
-        stockGB:dayGB*x.days+productGB,deliveryGB:x.deliveryTB*1000,
-        requiredGbps:(dayGB*8/86400+comp.movedGB*8/(30*86400)+dlv.externalGB*8/(p.deliveryDays*86400))/(p.linkEfficiency/100)};
+    return EXEC_SCHEMES.map(id=>{
+      const p=executiveParams(input,fixed,id),r=simulate(p),m12=r[11],last=r[r.length-1];
+      const by=k=>sum(r.map(x=>x.amort[k]));
+      const parts={cloudStorage:by('storage'),access:by('access')+by('control'),cloudCompute:by('cloudGPU')+by('cloudCPU'),
+        idcStorage:by('idcStorage'),idcCompute:by('idcCompute'),network:by('network')+by('delivery')};
+      return {id,parts,total36:sum(r.map(x=>x.totalAmort)),cash36:sum(r.map(x=>x.totalCash)),
+        month12:m12.totalAmort,perHour:m12.deliveredH>0?m12.totalAmort/m12.deliveredH:null,
+        capex:sum(r.map(x=>x.capex)),newPB:sum(r.map(x=>x.addedPB)),newGPU:sum(r.map(x=>x.addedGPU)),
+        windowDays:id==='window'?p.stdDays:null,existingPB:p.existingPB,existingGPU:p.existingGPU,
+        stockGB:sum(Object.values(last.stock)),rawGBday:m12.rawGB/MONTH,deliveredGB:m12.deliveredGB,deliveredH:m12.deliveredH,
+        requiredGbps:m12.requiredGbps,monthly:r.map(x=>x.totalAmort)};
     });
   }
   function snapshot(p,kind='detail') {return {schema:VERSION,asOf:AS_OF,kind,createdAt:new Date().toISOString(),params:clone(p)};}
@@ -291,5 +310,5 @@
     if(!s||s.schema!==VERSION||s.kind!==kind||!s.params)throw new Error('情景版本或类型不兼容；旧版参数不能静默套用新模型');
     const p=clone(s.params);if(kind==='detail')validate(p);return p;
   }
-  return {VERSION,AS_OF,MONTH,DEFAULT,VENDORS,clone,sum,meter,useVendor,validate,capacityCost,accessCost,penalty,transfer,compute,delivery,depreciation,quantities,simulate,executive,snapshot,restore};
+  return {VERSION,AS_OF,MONTH,DEFAULT,VENDORS,clone,sum,meter,useVendor,validate,capacityCost,accessCost,penalty,transfer,compute,delivery,depreciation,quantities,simulate,idcWindowDays,executiveParams,executive,snapshot,restore};
 });

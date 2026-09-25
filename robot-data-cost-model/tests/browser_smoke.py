@@ -72,33 +72,49 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as td:
     assert '<img src=x' in detail.locator("#params").inner_text()
     assert detail.evaluate("window.reportResult.params.mod[0].h") == 22000
 
+    # Window preset derives the IDC window from existing capacity; ? opens a definition.
+    detail.click('[data-preset="window"]')
+    detail.wait_for_timeout(250)
+    assert int(detail.input_value("#f-stdDays")) > 30
+    assert detail.evaluate("window.reportResult.params.hotPlace") == "idc"
+    detail.locator("#params button.q").first.click()
+    assert detail.locator("#termpop").is_visible()
+    detail.keyboard.press("Escape")
+    assert not detail.locator("#termpop").is_visible()
+    assert detail.locator("#principles li").count() == 5
+    assert detail.locator("#glossary .gi").count() > 20
+
     executive = page_for("v2.html")
-    before = executive.evaluate("window.executiveResult.rows[0].monthly")
-    executive.select_option("#dailyUnit", "PB")
-    assert executive.input_value("#daily") == "1"
-    assert executive.evaluate("window.executiveResult.rows[0].monthly") == before
+    rows = executive.evaluate("window.executiveResult.rows")
+    assert rows[2]["windowDays"] == 83
+    assert rows[0]["deliveredH"] == 600000
     executive.click("#saveBase")
-    executive.fill("#daily", "0.5")
-    assert executive.evaluate("window.executiveResult.business.dailyTB") == 500
+    executive.fill("#hours", "20950")
+    assert executive.evaluate("window.executiveResult.business.hours") == 20950
     assert executive.locator(".scheme .delta").count() == 3
+    executive.select_option("#prodPolicy", "30")
+    assert executive.evaluate("window.executiveResult.business.prodDays") == 30
     executive.locator("#assumptions").evaluate("e => e.open = true")
     capex = executive.evaluate("window.executiveResult.rows[2].capex")
-    executive.fill("#f-existingPB", "500")
-    executive.locator("#f-existingPB").dispatch_event("change")
+    executive.fill("#f-existingGPU", "5000")
+    executive.locator("#f-existingGPU").dispatch_event("change")
     assert executive.evaluate("window.executiveResult.rows[2].capex") < capex
-    executive.fill("#daily", "-1")
+    executive.fill("#hours", "-1")
     assert executive.locator("#error").is_visible()
     assert not executive.locator("#results").is_visible()
     assert "修正" in executive.locator("#decisionText").inner_text()
-    executive.fill("#daily", "0.5")
+    executive.fill("#hours", "20950")
     with executive.expect_download() as event:
         executive.click("#export")
     path = Path(td) / "executive.json"
     event.value.save_as(path)
-    executive.fill("#daily", "0.3")
+    executive.fill("#hours", "10000")
     executive.locator("#import").set_input_files(path)
     executive.wait_for_timeout(200)
-    assert executive.evaluate("window.executiveResult.business.dailyTB") == 500
+    assert executive.evaluate("window.executiveResult.business.hours") == 20950
+    assert executive.input_value("#prodPolicy") == "30"
+    executive.locator(".control button.q").first.click()
+    assert executive.locator("#termpop").is_visible()
     # No body-level horizontal overflow at phone or desktop widths; print keeps results.
     for page in (detail, executive):
         page.set_viewport_size({"width": 390, "height": 844})
@@ -108,4 +124,4 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as td:
         page.emulate_media(media="screen")
     assert not errors, errors
     browser.close()
-    print("PASS: offline rendering, controls, baseline, strategy isolation, invalid inputs, JSON round-trip, XSS safety, mobile and print")
+    print("PASS: offline rendering, controls, baseline, strategy isolation, window preset, term popovers, invalid inputs, JSON round-trip, XSS safety, mobile and print")
